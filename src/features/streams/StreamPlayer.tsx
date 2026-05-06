@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import axios from "axios";
 import Hls from "hls.js";
 import { type Camera } from "../../types/camera";
 import { useGridStore } from "../../store/useGridStore";
@@ -24,7 +25,7 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
 
     const startWebRTC = async () => {
       try {
-        let whepUrl = streamUrl.replace(/\/?$/, "/whep");
+        let whepUrl = streamUrl.endsWith('/whep') ? streamUrl : streamUrl.replace(/\/?$/, "/whep");
         let authHeader: string | null = null;
         
         try {
@@ -71,22 +72,17 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           setTimeout(resolve, 3000);
         });
 
-        const res = await fetch(whepUrl, {
-          method: "POST",
+        const res = await axios.post(whepUrl, pc.localDescription!.sdp, {
           headers: { 
             "Content-Type": "application/sdp",
             ...(authHeader && { "Authorization": authHeader })
           },
-          body: pc.localDescription!.sdp,
+          responseType: 'text'
         });
-
-        if (!res.ok) {
-          throw new Error(`WHEP failed with status: ${res.status}`);
-        }
 
         await pc.setRemoteDescription({
           type: "answer",
-          sdp: await res.text(),
+          sdp: res.data,
         });
         
         // Reset retry on success

@@ -52,15 +52,15 @@ interface DraggableChannelRowProps {
 
 const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
   const { activeChannels } = useGridStore();
-  const isInUse = channel ? activeChannels.some(c => c?.id === channel.id) : false;
+  const isInUse = channel && channel.id ? activeChannels.some(c => c?.id === channel.id) : false;
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: channel ? `channel-${channel.id}` : `empty-${index}`,
+    id: channel && channel.id ? `channel-${channel.id}` : `empty-${index}`,
     data: channel,
-    disabled: !channel || channel.status === 'offline' || isInUse,
+    disabled: !channel || !channel.id || channel.status === 'offline' || isInUse,
   });
 
-  const isEmpty = !channel;
+  const isEmpty = !channel || !channel.id;
   const isOffline = channel?.status === 'offline';
 
   return (
@@ -95,9 +95,10 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
               <span className={`w-1.5 h-1.5 rounded-sm mr-1.5 ${
                 channel.status === 'online' ? 'bg-[#16a34a]' :
                 channel.status === 'warning' ? 'bg-[#f59e0b]' :
-                'bg-[#e03e3e]'
+                channel.status === 'offline' ? 'bg-[#e03e3e]' :
+                'bg-[#383838]'
               }`} />
-              <span className="text-[9px] font-mono text-[#8d90a0] uppercase">{channel.status}</span>
+              <span className="text-[9px] font-mono text-[#8d90a0] uppercase">{channel.status || 'unknown'}</span>
             </div>
           </div>
         )}
