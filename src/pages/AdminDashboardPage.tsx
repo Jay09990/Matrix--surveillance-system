@@ -1,6 +1,6 @@
 import { Topbar } from '../components/Topbar';
 import { Link, useNavigate } from 'react-router-dom';
-import { Building2, HardDrive, Video, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Building2, HardDrive, ChevronRight, ArrowLeft } from 'lucide-react';
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -24,7 +24,7 @@ export default function AdminDashboardPage() {
             <p className="text-[#8d90a0] text-sm">Manage system resources and hardware.</p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Link 
               to="/admin/stations/add" 
               className="bg-[#131313] border border-[#2a2a2a] p-6 flex flex-col items-start transition-all hover:border-[#2563eb] hover:bg-[#1a1a1a] group"
@@ -51,20 +51,6 @@ export default function AdminDashboardPage() {
                 <ChevronRight className="w-5 h-5 text-[#8d90a0] group-hover:text-[#2563eb] transition-colors" />
               </h2>
               <p className="text-sm text-[#8d90a0]">Register a new Network Video Recorder device.</p>
-            </Link>
-
-            <Link 
-              to="/admin/cameras/add" 
-              className="bg-[#131313] border border-[#2a2a2a] p-6 flex flex-col items-start transition-all hover:border-[#2563eb] hover:bg-[#1a1a1a] group"
-            >
-              <div className="p-3 bg-[#1e1e1e] border border-[#2a2a2a] rounded-[2px] mb-4 group-hover:border-[#2563eb]/30 group-hover:bg-[#2563eb]/10">
-                <Video className="w-6 h-6 text-[#2563eb]" />
-              </div>
-              <h2 className="text-lg font-bold text-[#e5e2e1] mb-2 flex items-center justify-between w-full">
-                Add Camera
-                <ChevronRight className="w-5 h-5 text-[#8d90a0] group-hover:text-[#2563eb] transition-colors" />
-              </h2>
-              <p className="text-sm text-[#8d90a0]">Assign a new camera to an existing NVR channel.</p>
             </Link>
           </div>
         </div>

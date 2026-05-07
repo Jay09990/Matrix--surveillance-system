@@ -22,7 +22,7 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
 
     let retryCount = 0;
     const maxRetries = 1;
-
+    
     const startWebRTC = async () => {
       try {
         let whepUrl = streamUrl.endsWith('/whep') ? streamUrl : streamUrl.replace(/\/?$/, "/whep");
@@ -31,6 +31,17 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
         try {
           const normalized = whepUrl.replace(/^rtsp:\/\//i, "http://");
           const urlObj = new URL(normalized);
+
+          // Sync hostname with API base URL to respect .env settings
+          const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+          try {
+            const apiHost = new URL(apiBaseUrl).hostname;
+            if (urlObj.hostname !== apiHost) {
+              urlObj.hostname = apiHost;
+            }
+          } catch (e) {
+            console.error("Invalid API Base URL for hostname sync:", e);
+          }
 
           if (urlObj.username || urlObj.password) {
             authHeader = `Basic ${btoa(`${urlObj.username}:${urlObj.password}`)}`;

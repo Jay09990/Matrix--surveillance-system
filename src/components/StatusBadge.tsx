@@ -24,15 +24,17 @@ export interface StatusBadgeProps extends React.HTMLAttributes<HTMLDivElement>, 
 }
 
 export const StatusBadge = ({ className, status, ...props }: StatusBadgeProps) => {
+  const normalizedStatus = (status || 'unknown').toLowerCase() as any;
+
   return (
-    <div className={cn(badgeVariants({ status }), className)} {...props}>
+    <div className={cn(badgeVariants({ status: normalizedStatus }), className)} {...props}>
       <span className={cn(
         "w-1.5 h-1.5 mr-1.5 rounded-sm",
-        status === 'online' ? "bg-[#16a34a]" : 
-        status === 'offline' ? "bg-[#e03e3e]" : 
-        status === 'warning' ? "bg-[#f59e0b]" : "bg-[#383838]"
+        normalizedStatus === 'online' ? "bg-[#16a34a]" : 
+        normalizedStatus === 'offline' ? "bg-[#e03e3e]" : 
+        normalizedStatus === 'warning' ? "bg-[#f59e0b]" : "bg-[#383838]"
       )} />
-      {(status || 'unknown').replace('-', ' ')}
+      {normalizedStatus.replace('-', ' ')}
     </div>
   );
 };

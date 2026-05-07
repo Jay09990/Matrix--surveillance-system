@@ -1,26 +1,39 @@
-import { useState } from 'react';
-import { useForm, type SubmitHandler } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { stationSchema, type StationFormData } from '../../schemas/station.schema';
 import { api } from '../../lib/axios';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../components/ui/form';
 
 export const AddStationForm = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<StationFormData>({
+  const form = useForm<StationFormData>({
     resolver: zodResolver(stationSchema),
+    defaultValues: {
+      name: '',
+      city: '',
+      state: '',
+    },
   });
 
-  const onSubmit: SubmitHandler<StationFormData> = async (data) => {
+  const onSubmit = async (data: StationFormData) => {
     try {
       await api.post('/stations', data);
+      await queryClient.invalidateQueries({ queryKey: ['stations'] });
       toast.success('Station added successfully');
       navigate('/stations');
     } catch (error: any) {
@@ -29,69 +42,70 @@ export const AddStationForm = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <label className="text-xs font-bold tracking-wider text-[#8d90a0] uppercase">Station Name</label>
-          <input
-            {...register('name')}
-            type="text"
-            className="w-full bg-[#0d0d0d] border border-[#2a2a2a] px-3 py-2 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[2px]"
-            placeholder="e.g. New Delhi HQ"
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Station Name</FormLabel>
+                <FormControl>
+                  <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. New Delhi HQ" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-          {errors.name && <p className="text-[#ffb4ab] text-xs mt-1">{errors.name.message}</p>}
+
+          <FormField
+            control={form.control}
+            name="city"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">City</FormLabel>
+                <FormControl>
+                  <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. New Delhi" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="state"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">State</FormLabel>
+                <FormControl>
+                  <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. Delhi" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-xs font-bold tracking-wider text-[#8d90a0] uppercase">Subnet Segment</label>
-          <input
-            {...register('subnet')}
-            type="text"
-            className="w-full bg-[#0d0d0d] border border-[#2a2a2a] px-3 py-2 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[2px] font-mono"
-            placeholder="e.g. 192.168.1"
-          />
-          {errors.subnet && <p className="text-[#ffb4ab] text-xs mt-1">{errors.subnet.message}</p>}
+        <div className="flex justify-end pt-6 border-t border-[#2a2a2a] gap-4">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => navigate('/admin')}
+            className="text-[#8d90a0] hover:text-white"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={form.formState.isSubmitting}
+            className="bg-[#2563eb] hover:bg-[#2563eb]/90 px-8"
+          >
+            {form.formState.isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Station'}
+          </Button>
         </div>
-
-        <div className="space-y-2">
-          <label className="text-xs font-bold tracking-wider text-[#8d90a0] uppercase">City</label>
-          <input
-            {...register('city')}
-            type="text"
-            className="w-full bg-[#0d0d0d] border border-[#2a2a2a] px-3 py-2 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[2px]"
-            placeholder="e.g. New Delhi"
-          />
-          {errors.city && <p className="text-[#ffb4ab] text-xs mt-1">{errors.city.message}</p>}
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs font-bold tracking-wider text-[#8d90a0] uppercase">State</label>
-          <input
-            {...register('state')}
-            type="text"
-            className="w-full bg-[#0d0d0d] border border-[#2a2a2a] px-3 py-2 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[2px]"
-            placeholder="e.g. Delhi"
-          />
-          {errors.state && <p className="text-[#ffb4ab] text-xs mt-1">{errors.state.message}</p>}
-        </div>
-      </div>
-
-      <div className="flex justify-end pt-6 border-t border-[#2a2a2a] gap-4">
-        <button
-          type="button"
-          onClick={() => navigate('/admin')}
-          className="text-[#8d90a0] hover:text-white px-4 py-2 transition-colors font-semibold"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="bg-[#2563eb] hover:bg-[#2563eb]/90 text-white font-semibold py-2 px-8 rounded-[2px] transition-colors disabled:opacity-50 flex items-center justify-center h-10 min-w-[140px]"
-        >
-          {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Save Station'}
-        </button>
-      </div>
-    </form>
+      </form>
+    </Form>
   );
 };

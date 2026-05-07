@@ -1,10 +1,12 @@
 import { Topbar } from '../components/Topbar';
 import { AddNVRForm } from '../features/nvrs/AddNVRForm';
 import { HardDrive, ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 export default function AddNVRPage() {
   const navigate = useNavigate();
+  const { nvrId } = useParams<{ nvrId: string }>();
+  const isEdit = !!nvrId;
 
   return (
     <div className="min-h-screen w-full bg-[#0d0d0d] flex flex-col">
@@ -24,8 +26,12 @@ export default function AddNVRPage() {
               <HardDrive className="w-6 h-6 text-[#2563eb]" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white mb-1">Add NVR Device</h1>
-              <p className="text-[#8d90a0] text-sm">Register a new Network Video Recorder to a station.</p>
+              <h1 className="text-2xl font-bold tracking-tight text-white mb-1">
+                {isEdit ? 'Edit NVR Device' : 'Add NVR Device'}
+              </h1>
+              <p className="text-[#8d90a0] text-sm">
+                {isEdit ? 'Update settings for this Network Video Recorder.' : 'Register a new Network Video Recorder to a station.'}
+              </p>
             </div>
           </div>
           

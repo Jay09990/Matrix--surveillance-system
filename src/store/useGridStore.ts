@@ -1,7 +1,7 @@
 import type { Camera } from '../types/camera';
 import { create } from 'zustand';
 
-export type GridLayout = '1x1' | '2x2' | '3x3' | '4x4' | '4x8';
+export type GridLayout = '1x1' | '2x2' | '3x3' | '4x4';
 
 interface GridState {
   layout: GridLayout;
@@ -18,7 +18,6 @@ const getSlotCount = (layout: GridLayout) => {
     case '2x2': return 4;
     case '3x3': return 9;
     case '4x4': return 16;
-    case '4x8': return 32;
     default: return 4;
   }
 };

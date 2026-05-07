@@ -4,7 +4,7 @@ export interface Camera {
   channel: number;
   name: string;
   status: 'online' | 'offline' | 'warning' | 'no-signal';
-  lastSeen?: string;
+  lastSeenAt?: string;
   streamUrl?: string; // e.g. the WHEP endpoint or HLS fallback
   areaTag?: string;
 }

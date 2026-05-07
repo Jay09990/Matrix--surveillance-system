@@ -12,11 +12,33 @@ import { useGridStore } from '../store/useGridStore';
 import type { Camera } from '../types/camera';
 import { api } from '../lib/axios';
 import { USE_MOCKDATA } from '../config';
+import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { useDetection } from '../features/nvrs/useDetection';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
 
 export default function LiveViewPage() {
   const { stationId } = useParams<{ stationId: string }>();
   const [selectedNvrId, setSelectedNvrId] = useState<string | null>(null);
+  const { startDetection, stopDetection } = useDetection(selectedNvrId);
+
+  useEffect(() => {
+    if (selectedNvrId) {
+      startDetection(selectedNvrId).catch((err) => {
+        console.error('Failed to start detection:', err);
+      });
+    }
+
+    return () => {
+      if (selectedNvrId) {
+        stopDetection(selectedNvrId).catch((err) => {
+          console.error('Failed to stop detection:', err);
+        });
+      }
+    };
+  }, [selectedNvrId, startDetection, stopDetection]);
   const [activeDragData, setActiveDragData] = useState<Camera | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const { addChannel } = useGridStore();
 
   if (!stationId) return <Navigate to="/stations" replace />;
@@ -71,10 +93,16 @@ export default function LiveViewPage() {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden relative">
           {/* Sidebar */}
-          <div className="w-72 bg-[#131313] border-r border-[#2a2a2a] flex flex-col shrink-0">
-            <div className="flex-1 flex flex-col overflow-hidden">
+          <div 
+            className={`bg-[#131313] border-r border-[#2a2a2a] flex flex-col shrink-0 transition-all duration-300 ease-in-out relative ${
+              isSidebarCollapsed ? 'w-0 border-none' : 'w-72'
+            }`}
+          >
+            <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-200 ${
+              isSidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            }`}>
               <SectionLabel>NVR Devices</SectionLabel>
               <div className="h-1/3 overflow-y-auto no-scrollbar border-b border-[#2a2a2a]">
                 <NVRList 
@@ -84,14 +112,42 @@ export default function LiveViewPage() {
                 />
               </div>
               
-              <SectionLabel>Channels (32)</SectionLabel>
+              <div className="flex items-center justify-between pr-4">
+                <SectionLabel>Channels</SectionLabel>
+                {selectedNvrId && (
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#2563eb]/10 border border-[#2563eb]/20">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#2563eb] animate-pulse" />
+                    <span className="text-[10px] font-bold text-[#2563eb] uppercase tracking-tighter">Scanning</span>
+                  </div>
+                )}
+              </div>
               <ChannelList nvrId={selectedNvrId} />
             </div>
-            <LayoutToggle />
+            {!isSidebarCollapsed && <LayoutToggle />}
+
+            {/* Floating Collapse/Expand Button (when open) */}
+            <button
+              onClick={() => setIsSidebarCollapsed(true)}
+              className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 bg-[#2a2a2a] hover:bg-[#333] border border-[#3a3a3a] rounded-r-md flex items-center justify-center text-[#8d90a0] hover:text-white transition-colors z-20 shadow-lg group"
+            >
+              <ChevronLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+            </button>
           </div>
 
+          {/* Expand Button (when collapsed) */}
+          {isSidebarCollapsed && (
+            <button
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-6 h-12 bg-[#2a2a2a] hover:bg-[#333] border border-[#3a3a3a] border-l-0 rounded-r-md flex items-center justify-center text-[#8d90a0] hover:text-white transition-colors z-20 shadow-lg group"
+            >
+              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          )}
+
           {/* Main Grid */}
-          <LiveGrid />
+          <div className="flex-1 min-w-0">
+            <LiveGrid />
+          </div>
         </div>
 
         {/* Drag Overlay */}
@@ -111,3 +167,4 @@ export default function LiveViewPage() {
     </div>
   );
 }
+

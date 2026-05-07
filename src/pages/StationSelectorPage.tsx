@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Topbar } from '../components/Topbar';
 import { useStations } from '../features/stations/useStations';
-import { StationGrid } from '../features/stations/StationGrid';
+import { StationTable } from '../features/stations/StationTable';
 import { Search, Loader2, AlertCircle } from 'lucide-react';
 
 export default function StationSelectorPage() {
@@ -16,7 +16,8 @@ export default function StationSelectorPage() {
     return stations.filter(
       (station) => 
         station.name.toLowerCase().includes(query) || 
-        station.location.toLowerCase().includes(query)
+        station.city.toLowerCase().includes(query) ||
+        station.state.toLowerCase().includes(query)
     );
   }, [stations, searchQuery]);
 
@@ -38,7 +39,7 @@ export default function StationSelectorPage() {
               </div>
               <input
                 type="text"
-                placeholder="Search by name or location..."
+                placeholder="Search by name, city or state..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[#131313] border border-[#2a2a2a] pl-10 pr-3 py-2 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[0px]"
@@ -60,7 +61,7 @@ export default function StationSelectorPage() {
               </div>
             </div>
           ) : (
-            <StationGrid stations={filteredStations} />
+            <StationTable stations={filteredStations} />
           )}
         </div>
       </main>

@@ -9,7 +9,6 @@ export const LayoutToggle = () => {
     { id: '2x2', icon: Grid2x2, label: '2x2' },
     { id: '3x3', icon: Grid3X3, label: '3x3' },
     { id: '4x4', icon: Grid, label: '4x4' },
-    { id: '4x8', icon: Grid, label: '4x8' },
   ];
 
   return (

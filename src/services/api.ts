@@ -1,23 +1,52 @@
-import axios from 'axios';
-import type { Camera, CameraStreamResponse, HealthResponse } from '../types/camera';
+import { api } from '../lib/axios';
+import type { Station } from '../types/station';
+import type { NVR } from '../types/nvr';
+import type { Camera } from '../types/camera';
 
-const getBaseUrl = () => import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+/**
+ * Centralized API Service
+ * 
+ * This file serves as the single source of truth for all backend interactions.
+ */
 
-const api = axios.create({
-  baseURL: getBaseUrl(),
-});
+export const apiService = {
+  // --- Auth ---
+  auth: {
+    login: (credentials: any) => api.post('/auth/login', credentials),
+    me: () => api.get('/auth/me'),
+  },
 
-export const checkHealth = async (): Promise<HealthResponse> => {
-  const { data } = await api.get<HealthResponse>('/health');
-  return data;
-};
+  // --- Stations ---
+  stations: {
+    list: () => api.get<Station[]>('/stations'),
+    get: (id: string) => api.get<Station>(`/stations/${id}`),
+    create: (data: any) => api.post('/stations', data),
+    delete: (id: string) => api.delete(`/stations/${id}`),
+  },
 
-export const getCameras = async (): Promise<Camera[]> => {
-  const { data } = await api.get<Camera[]>('/cameras');
-  return data;
-};
+  // --- NVRs ---
+  nvrs: {
+    listByStation: (stationId: string) => api.get<NVR[]>(`/stations/${stationId}/nvrs`),
+    create: (stationId: string, data: any) => api.post(`/stations/${stationId}/nvrs`, data),
+    update: (stationId: string, id: string, data: any) => api.put(`/stations/${stationId}/nvrs/${id}`, data),
+    delete: (stationId: string, id: string) => api.delete(`/stations/${stationId}/nvrs/${id}`),
+    
+    // Detection
+    detection: {
+      status: (nvrId: string) => api.get(`/nvrs/${nvrId}/detection/status`),
+      start: (nvrId: string) => api.post(`/nvrs/${nvrId}/detection/start`),
+      stop: (nvrId: string) => api.post(`/nvrs/${nvrId}/detection/stop`),
+      active: () => api.get('/nvrs/detection/active'),
+    }
+  },
 
-export const getCameraStreamUrl = async (cameraId: string): Promise<CameraStreamResponse> => {
-  const { data } = await api.get<CameraStreamResponse>(`/cameras/${cameraId}/stream`);
-  return data;
+  // --- Cameras & Streams ---
+  cameras: {
+    listByNvr: (nvrId: string) => api.get<Camera[]>(`/nvrs/${nvrId}/cameras`),
+  },
+
+  streams: {
+    resolve: (nvrId: string, channel: number) => 
+      api.get(`/nvrs/${nvrId}/streams/${channel}`),
+  }
 };

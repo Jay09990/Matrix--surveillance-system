@@ -54,7 +54,7 @@ export const NVRList = ({ stationId, selectedNvrId, onSelectNvr }: NVRListProps)
               <p className={`text-sm font-semibold ${selectedNvrId === nvr.id ? 'text-white' : 'text-[#e5e2e1]'}`}>
                 {nvr.name}
               </p>
-              <p className="text-[10px] text-[#8d90a0] font-mono mt-0.5">{nvr.ipAddress}</p>
+              <p className="text-[10px] text-[#8d90a0] font-mono mt-0.5">{nvr.ip}</p>
             </div>
           </div>
           <StatusBadge status={nvr.status} />

@@ -7,7 +7,6 @@ import LoginPage from './pages/LoginPage';
 import StationSelectorPage from './pages/StationSelectorPage';
 import LiveViewPage from './pages/LiveViewPage';
 import AddNVRPage from './pages/AddNVRPage';
-import AddCameraPage from './pages/AddCameraPage';
 
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AddStationPage from './pages/AddStationPage';
@@ -50,8 +49,12 @@ const router = createBrowserRouter([
             element: <AddNVRPage />,
           },
           {
-            path: 'cameras/add',
-            element: <AddCameraPage />,
+            path: 'nvrs/edit/:stationId/:nvrId',
+            element: <AddNVRPage />,
+          },
+          {
+            path: 'nvrs/edit/:nvrId',
+            element: <AddNVRPage />,
           },
         ],
       },

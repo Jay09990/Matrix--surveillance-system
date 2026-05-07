@@ -14,7 +14,7 @@ export const RequireAuth = () => {
 export const RequireAdmin = () => {
   const { user } = useSessionStore();
 
-  if (user?.role !== 'admin') {
+  if (user?.role?.toLowerCase() !== 'admin') {
     return <Navigate to="/stations" replace />;
   }
 
