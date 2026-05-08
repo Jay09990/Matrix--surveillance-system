@@ -3,11 +3,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, type LoginFormData } from '../../schemas/auth.schema';
 import { useLogin } from './useAuth';
 import { useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { useState } from 'react';
 
 export const LoginForm = () => {
   const navigate = useNavigate();
   const loginMutation = useLogin();
+  const [showPassword, setShowPassword] = useState(false);
   
   const {
     register,
@@ -52,11 +54,20 @@ export const LoginForm = () => {
 
         <div className="space-y-2">
           <label className="text-xs font-bold tracking-wider text-[#8d90a0] uppercase">Password</label>
-          <input
-            {...register('password')}
-            type="password"
-            className="w-full bg-[#0d0d0d] border border-[#2a2a2a] px-3 py-2 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[2px]"
-          />
+          <div className="relative">
+            <input
+              {...register('password')}
+              type={showPassword ? 'text' : 'password'}
+              className="w-full bg-[#0d0d0d] border border-[#2a2a2a] px-3 py-2 pr-10 text-sm text-[#e5e2e1] focus:outline-none focus:border-[#2563eb] transition-colors rounded-[2px]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8d90a0] hover:text-[#e5e2e1] transition-colors"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
           {errors.password && <p className="text-[#ffb4ab] text-xs mt-1">{errors.password.message}</p>}
         </div>
 

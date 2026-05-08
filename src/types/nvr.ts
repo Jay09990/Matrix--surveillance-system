@@ -1,11 +1,23 @@
+export type NVRType = 'HIKVISION' | 'HIFOCUS';
+export type NVRStatus = 'online' | 'offline' | 'warning';
+
 export interface NVR {
   id: string;
-  stationId: string;
   name: string;
   ip: string;
+  type: NVRType;
   username: string;
-  type: 'HIKVISION' | 'HIFOCUS';
-  totalChannel: number;
-  status: 'online' | 'offline' | 'warning';
+  rtspPort?: number;
+  httpPort?: number;
+  status: NVRStatus;
   lastSeenAt?: string;
+  offlineSince?: string;
+  station: {
+    id: string;
+    name: string;
+    city: string;
+  };
+  _count: {
+    cameras: number;
+  };
 }

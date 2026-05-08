@@ -1,6 +1,6 @@
 import { Topbar } from '../components/Topbar';
 import { Link, useNavigate } from 'react-router-dom';
-import { Building2, HardDrive, ChevronRight, ArrowLeft } from 'lucide-react';
+import { HardDrive, ChevronRight, ArrowLeft } from 'lucide-react';
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -8,10 +8,10 @@ export default function AdminDashboardPage() {
   return (
     <div className="min-h-screen w-full bg-[#0d0d0d] flex flex-col">
       <Topbar />
-      
+
       <main className="flex-1 overflow-y-auto p-6 lg:p-10">
         <div className="max-w-4xl mx-auto">
-          <button 
+          <button
             onClick={() => navigate('/stations')}
             className="flex items-center gap-2 text-[#8d90a0] hover:text-white mb-6 transition-colors group"
           >
@@ -23,24 +23,10 @@ export default function AdminDashboardPage() {
             <h1 className="text-2xl font-bold tracking-tight text-white mb-1">Administration</h1>
             <p className="text-[#8d90a0] text-sm">Manage system resources and hardware.</p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Link 
-              to="/admin/stations/add" 
-              className="bg-[#131313] border border-[#2a2a2a] p-6 flex flex-col items-start transition-all hover:border-[#2563eb] hover:bg-[#1a1a1a] group"
-            >
-              <div className="p-3 bg-[#1e1e1e] border border-[#2a2a2a] rounded-[2px] mb-4 group-hover:border-[#2563eb]/30 group-hover:bg-[#2563eb]/10">
-                <Building2 className="w-6 h-6 text-[#2563eb]" />
-              </div>
-              <h2 className="text-lg font-bold text-[#e5e2e1] mb-2 flex items-center justify-between w-full">
-                Add Station
-                <ChevronRight className="w-5 h-5 text-[#8d90a0] group-hover:text-[#2563eb] transition-colors" />
-              </h2>
-              <p className="text-sm text-[#8d90a0]">Create a new surveillance location or region.</p>
-            </Link>
 
-            <Link 
-              to="/admin/nvrs/add" 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Link
+              to="/admin/nvrs/add"
               className="bg-[#131313] border border-[#2a2a2a] p-6 flex flex-col items-start transition-all hover:border-[#2563eb] hover:bg-[#1a1a1a] group"
             >
               <div className="p-3 bg-[#1e1e1e] border border-[#2a2a2a] rounded-[2px] mb-4 group-hover:border-[#2563eb]/30 group-hover:bg-[#2563eb]/10">
@@ -50,7 +36,7 @@ export default function AdminDashboardPage() {
                 Add NVR
                 <ChevronRight className="w-5 h-5 text-[#8d90a0] group-hover:text-[#2563eb] transition-colors" />
               </h2>
-              <p className="text-sm text-[#8d90a0]">Register a new Network Video Recorder device.</p>
+              <p className="text-sm text-[#8d90a0]">Register a new Network Video Recorder and create its station in one step.</p>
             </Link>
           </div>
         </div>

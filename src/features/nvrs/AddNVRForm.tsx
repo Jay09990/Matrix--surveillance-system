@@ -2,12 +2,11 @@ import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, ChevronRight, ChevronLeft } from 'lucide-react';
-import { api } from '../../lib/axios';
-import { useStations } from '../stations/useStations';
-import { stationSchema, type StationFormData } from '../../schemas/station.schema';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { apiService } from '../../services/api';
+import { useNVR } from './useNVRs';
 import { nvrSchema, type NVRFormData } from '../../schemas/nvr.schema';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -27,129 +26,67 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 
-type FormMode = 'new' | 'existing';
-
 export const AddNVRForm = () => {
-  const { stationId: paramStationId, nvrId } = useParams<{ stationId: string, nvrId: string }>();
+  const { nvrId } = useParams<{ nvrId: string; stationId?: string }>();
   const isEdit = !!nvrId;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data: stations, isLoading: stationsLoading } = useStations();
-  
-  const [mode, setMode] = useState<FormMode>('new');
-  const [step, setStep] = useState(isEdit ? 2 : 1);
-  const [stationId, setStationId] = useState<string | null>(paramStationId || null);
-  const [isSubmittingStation, setIsSubmittingStation] = useState(false);
 
-  // Fetch NVR list for the station and find the specific NVR
-  const { data: existingNvr, isLoading: nvrLoading } = useQuery({
-    queryKey: ['nvr-lookup', paramStationId, nvrId],
-    queryFn: async () => {
-      if (!nvrId) return null;
-      
-      // If we have stationId, use the direct endpoint
-      if (paramStationId) {
-        const res = await api.get(`/stations/${paramStationId}/nvrs`);
-        return res.data.find((n: any) => n.id === nvrId);
-      }
-      
-      // Fallback: search across all stations to find this NVR
-      // This handles cases where the URL might be old or missing stationId
-      const stationsRes = await api.get('/stations');
-      const allStations = stationsRes.data;
-      
-      for (const station of allStations) {
-        const nvrsRes = await api.get(`/stations/${station.id}/nvrs`);
-        const found = nvrsRes.data.find((n: any) => n.id === nvrId);
-        if (found) return found;
-      }
-      
-      return null;
-    },
-    enabled: isEdit,
-  });
+  const [showPassword, setShowPassword] = useState(false);
 
-  // Step 1 Form (New Station)
-  const stationForm = useForm<StationFormData>({
-    resolver: zodResolver(stationSchema),
-    defaultValues: {
-      name: '',
-      city: '',
-      state: '',
-    },
-  });
+  // Fetch existing NVR when in edit mode
+  const { data: existingNvr, isLoading: nvrLoading } = useNVR(nvrId ?? null);
 
-  // Step 2 Form (NVR Details)
-  const nvrForm = useForm<NVRFormData>({
+  const form = useForm<NVRFormData>({
     resolver: zodResolver(nvrSchema),
     defaultValues: {
       name: '',
       ip: '',
       type: 'HIFOCUS',
+      rtspPort: undefined,
+      httpPort: undefined,
       username: 'admin',
       password: '',
-      totalChannel: 32,
+      stationName: '',
+      stationCity: '',
     },
   });
 
-  // Update form when existingNvr is loaded
+  // Populate form when editing
   useEffect(() => {
     if (existingNvr) {
-      nvrForm.reset({
+      form.reset({
         name: existingNvr.name,
         ip: existingNvr.ip,
         type: existingNvr.type,
+        rtspPort: existingNvr.rtspPort,
+        httpPort: existingNvr.httpPort,
         username: existingNvr.username,
-        password: existingNvr.password || '', // Password might not be returned
-        totalChannel: existingNvr.totalChannel,
+        password: '',
+        stationName: existingNvr.station.name,
+        stationCity: existingNvr.station.city,
       });
-      setStationId(existingNvr.stationId);
     }
-  }, [existingNvr, nvrForm]);
+  }, [existingNvr, form]);
 
-  const handleNext = async (data: StationFormData) => {
-    setIsSubmittingStation(true);
+  const onSubmit = async (data: NVRFormData) => {
     try {
-      const response = await api.post('/stations', data);
-      await queryClient.invalidateQueries({ queryKey: ['stations'] });
-      setStationId(response.data.id);
-      setStep(2);
-    } catch (error: any) {
-      toast.error(error.response?.data?.message || 'Failed to create station');
-    } finally {
-      setIsSubmittingStation(false);
-    }
-  };
-
-  const handleExistingStation = (id: string) => {
-    setStationId(id);
-    setStep(2);
-  };
-
-  const onNVRSubmit = async (data: NVRFormData) => {
-    if (!stationId) return;
-    try {
-      if (isEdit) {
-        await api.put(`/stations/${stationId}/nvrs/${nvrId}`, data);
+      if (isEdit && nvrId) {
+        await apiService.nvrs.update(nvrId, data);
         toast.success('NVR updated successfully');
-      } else {
-        await api.post(`/stations/${stationId}/nvrs`, data);
-        toast.success('NVR added successfully');
-      }
-      
-      await queryClient.invalidateQueries({ queryKey: ['nvrs', stationId] });
-      await queryClient.invalidateQueries({ queryKey: ['stations'] });
-      if (isEdit) {
         await queryClient.invalidateQueries({ queryKey: ['nvr', nvrId] });
+      } else {
+        await apiService.nvrs.create(data);
+        toast.success('NVR created successfully');
       }
-      
-      navigate('/stations');
+      await queryClient.invalidateQueries({ queryKey: ['nvrs'] });
+      navigate('/admin');
     } catch (error: any) {
-      toast.error(error.response?.data?.message || `Failed to ${isEdit ? 'update' : 'add'} NVR`);
+      toast.error(error.response?.data?.message || `Failed to ${isEdit ? 'update' : 'create'} NVR`);
     }
   };
 
-  if (nvrLoading) {
+  if (isEdit && nvrLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-[#8d90a0]">
         <Loader2 className="w-8 h-8 animate-spin mb-4 text-[#2563eb]" />
@@ -159,183 +96,114 @@ export const AddNVRForm = () => {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Step Indicator - Hide if editing */}
-      {!isEdit && (
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-4">
-            <div className={`flex items-center justify-center w-8 h-8 rounded-full border ${step === 1 ? 'border-[#2563eb] bg-[#2563eb]/10 text-[#2563eb]' : 'border-[#2a2a2a] text-[#8d90a0]'}`}>
-              1
-            </div>
-            <div className="h-px w-8 bg-[#2a2a2a]" />
-            <div className={`flex items-center justify-center w-8 h-8 rounded-full border ${step === 2 ? 'border-[#2563eb] bg-[#2563eb]/10 text-[#2563eb]' : 'border-[#2a2a2a] text-[#8d90a0]'}`}>
-              2
-            </div>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+
+        {/* ── Station Info ─────────────────────────────────────── */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 pb-2 border-b border-[#2a2a2a]">
+            <div className="w-1.5 h-4 bg-[#2563eb] rounded-sm" />
+            <span className="text-xs font-bold uppercase tracking-widest text-[#8d90a0]">Station Info</span>
           </div>
-          <span className="text-xs font-mono text-[#8d90a0] uppercase tracking-widest">
-            Step {step} of 2
-          </span>
-        </div>
-      )}
-
-      {step === 1 && !isEdit && (
-        <div className="space-y-6">
-          {/* Mode Toggle */}
-          <div className="flex p-1 bg-[#0d0d0d] border border-[#2a2a2a] rounded-[2px] w-full">
-            <button
-              onClick={() => setMode('new')}
-              className={`flex-1 py-2 text-sm font-semibold transition-colors rounded-sm ${mode === 'new' ? 'bg-[#2563eb] text-white' : 'text-[#8d90a0] hover:text-[#e5e2e1]'}`}
-            >
-              Create New Station
-            </button>
-            <button
-              onClick={() => setMode('existing')}
-              className={`flex-1 py-2 text-sm font-semibold transition-colors rounded-sm ${mode === 'existing' ? 'bg-[#2563eb] text-white' : 'text-[#8d90a0] hover:text-[#e5e2e1]'}`}
-            >
-              Use Existing Station
-            </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField
+              control={form.control}
+              name="stationName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Station Name</FormLabel>
+                  <FormControl>
+                    <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. Mumbai Central" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="stationCity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">City</FormLabel>
+                  <FormControl>
+                    <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. Mumbai" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
-
-          {mode === 'new' ? (
-            <Form {...stationForm}>
-              <form onSubmit={stationForm.handleSubmit(handleNext)} className="space-y-4">
-                <FormField
-                  control={stationForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Station Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. Mumbai Central" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={stationForm.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">City</FormLabel>
-                        <FormControl>
-                          <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. Mumbai" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={stationForm.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">State</FormLabel>
-                        <FormControl>
-                          <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. Maharashtra" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <div className="flex justify-end gap-4 pt-4">
-                  <Button type="button" variant="ghost" onClick={() => navigate('/admin')} className="text-[#8d90a0]">Cancel</Button>
-                  <Button type="submit" disabled={isSubmittingStation} className="bg-[#2563eb] hover:bg-[#2563eb]/90 px-8">
-                    {isSubmittingStation ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Next <ChevronRight className="w-4 h-4 ml-2" /></>}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[#8d90a0] text-xs uppercase font-bold">Select Station</label>
-                <Select onValueChange={handleExistingStation}>
-                  <SelectTrigger className="bg-[#0d0d0d] border-[#2a2a2a] text-[#e5e2e1]">
-                    <SelectValue placeholder={stationsLoading ? "Loading stations..." : "Choose a station"} />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#131313] border-[#2a2a2a] text-[#e5e2e1]">
-                    {stations?.map((station) => (
-                      <SelectItem key={station.id} value={station.id} className="focus:bg-[#2563eb] focus:text-white">
-                        {station.name} ({station.city})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-4 pt-4">
-                <Button variant="ghost" onClick={() => navigate('/admin')} className="text-[#8d90a0]">Cancel</Button>
-              </div>
-            </div>
-          )}
         </div>
-      )}
 
-      {step === 2 && (
-        <Form {...nvrForm}>
-          <form onSubmit={nvrForm.handleSubmit(onNVRSubmit)} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormField
-                control={nvrForm.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Custom Name</FormLabel>
+        {/* ── NVR Details ──────────────────────────────────────── */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 pb-2 border-b border-[#2a2a2a]">
+            <div className="w-1.5 h-4 bg-[#2563eb] rounded-sm" />
+            <span className="text-xs font-bold uppercase tracking-widest text-[#8d90a0]">NVR Details</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Custom Name</FormLabel>
+                  <FormControl>
+                    <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. NVR 01" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="ip"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">IP Address</FormLabel>
+                  <FormControl>
+                    <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb] font-mono" placeholder="192.168.1.10" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">NVR Type</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" placeholder="e.g. NVR 01" />
+                      <SelectTrigger className="bg-[#0d0d0d] border-[#2a2a2a] text-[#e5e2e1]">
+                        <SelectValue />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                    <SelectContent className="bg-[#131313] border-[#2a2a2a] text-[#e5e2e1]">
+                      <SelectItem value="HIFOCUS" className="focus:bg-[#2563eb] focus:text-white">HIFOCUS</SelectItem>
+                      <SelectItem value="HIKVISION" className="focus:bg-[#2563eb] focus:text-white">HIKVISION</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="grid grid-cols-2 gap-3">
               <FormField
-                control={nvrForm.control}
-                name="ip"
+                control={form.control}
+                name="rtspPort"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">IP Address</FormLabel>
+                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">RTSP Port</FormLabel>
                     <FormControl>
-                      <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb] font-mono" placeholder="192.168.1.10" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={nvrForm.control}
-                name="type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">NVR Type</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="bg-[#0d0d0d] border-[#2a2a2a] text-[#e5e2e1]">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="bg-[#131313] border-[#2a2a2a] text-[#e5e2e1]">
-                        <SelectItem value="HIFOCUS" className="focus:bg-[#2563eb] focus:text-white">HIFOCUS</SelectItem>
-                        <SelectItem value="HIKVISION" className="focus:bg-[#2563eb] focus:text-white">HIKVISION</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={nvrForm.control}
-                name="totalChannel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Total Channels</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="number" 
-                        {...field} 
-                        onChange={e => field.onChange(parseInt(e.target.value))}
-                        className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" 
+                      <Input
+                        type="number"
+                        placeholder="554"
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                        className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb] font-mono"
                       />
                     </FormControl>
                     <FormMessage />
@@ -343,48 +211,96 @@ export const AddNVRForm = () => {
                 )}
               />
               <FormField
-                control={nvrForm.control}
-                name="username"
+                control={form.control}
+                name="httpPort"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Username</FormLabel>
+                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">HTTP Port</FormLabel>
                     <FormControl>
-                      <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={nvrForm.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" />
+                      <Input
+                        type="number"
+                        placeholder="80"
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                        className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb] font-mono"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
-            <div className="flex justify-between items-center pt-4 border-t border-[#2a2a2a]">
-              {!isEdit && (
-                <Button type="button" variant="ghost" onClick={() => setStep(1)} className="text-[#8d90a0]">
-                  <ChevronLeft className="w-4 h-4 mr-2" /> Back
-                </Button>
+          </div>
+        </div>
+
+        {/* ── Credentials ──────────────────────────────────────── */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 pb-2 border-b border-[#2a2a2a]">
+            <div className="w-1.5 h-4 bg-[#2563eb] rounded-sm" />
+            <span className="text-xs font-bold uppercase tracking-widest text-[#8d90a0]">Credentials</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">Username</FormLabel>
+                  <FormControl>
+                    <Input {...field} className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
               )}
-              <div className={`flex gap-4 ${isEdit ? 'w-full justify-end' : ''}`}>
-                <Button type="button" variant="ghost" onClick={() => navigate('/admin')} className="text-[#8d90a0]">Cancel</Button>
-                <Button type="submit" disabled={nvrForm.formState.isSubmitting} className="bg-[#2563eb] hover:bg-[#2563eb]/90 px-8">
-                  {nvrForm.formState.isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : isEdit ? 'Update NVR' : 'Save NVR'}
-                </Button>
-              </div>
-            </div>
-          </form>
-        </Form>
-      )}
-    </div>
+            />
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-[#8d90a0] text-xs uppercase font-bold">
+                    Password {isEdit && <span className="text-[#383838] normal-case font-normal ml-1">(leave blank to keep current)</span>}
+                  </FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? 'text' : 'password'}
+                        {...field}
+                        className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb] pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8d90a0] hover:text-[#e5e2e1] transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </div>
+
+        {/* ── Actions ──────────────────────────────────────────── */}
+        <div className="flex justify-end gap-4 pt-4 border-t border-[#2a2a2a]">
+          <Button type="button" variant="ghost" onClick={() => navigate('/admin')} className="text-[#8d90a0]">
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={form.formState.isSubmitting}
+            className="bg-[#2563eb] hover:bg-[#2563eb]/90 px-8"
+          >
+            {form.formState.isSubmitting
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : isEdit ? 'Update NVR' : 'Save NVR'}
+          </Button>
+        </div>
+      </form>
+    </Form>
   );
 };

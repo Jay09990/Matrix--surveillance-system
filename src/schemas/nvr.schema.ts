@@ -7,9 +7,12 @@ export const nvrSchema = z.object({
     { message: 'Invalid IPv4 address' }
   ),
   type: z.enum(['HIKVISION', 'HIFOCUS']),
+  rtspPort: z.number().int().min(1).max(65535).optional(),
+  httpPort: z.number().int().min(1).max(65535).optional(),
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
-  totalChannel: z.number().int().min(1, 'At least 1 channel required'),
+  stationName: z.string().min(2, 'Station name must be at least 2 characters'),
+  stationCity: z.string().min(2, 'City must be at least 2 characters'),
 });
 
 export type NVRFormData = z.infer<typeof nvrSchema>;

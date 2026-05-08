@@ -32,3 +32,6 @@ dist-ssr
 
 # Build outputs
 repomix-output.json
+backend-repomix-output.json
+GEMINI.md
+GEMINI.original.md

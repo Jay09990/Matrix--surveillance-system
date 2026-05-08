@@ -96,9 +96,9 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
         <div className="flex flex-col items-center justify-center text-[#e03e3e]">
           <WifiOff className="w-8 h-8 mb-2 opacity-50" />
           <span className="text-[10px] font-bold tracking-widest uppercase">OFFLINE</span>
-          {channel.lastSeen && (
+          {channel.lastSeenAt && (
             <span className="text-[9px] font-mono mt-1 opacity-70">
-              Last seen: {formatDistanceToNow(new Date(channel.lastSeen))} ago
+              Last seen: {formatDistanceToNow(new Date(channel.lastSeenAt))} ago
             </span>
           )}
         </div>

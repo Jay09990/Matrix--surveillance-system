@@ -10,8 +10,9 @@ import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core';
 import type { DragEndEvent } from '@dnd-kit/core';
 import { useGridStore } from '../store/useGridStore';
 import type { Camera } from '../types/camera';
-import { api } from '../lib/axios';
+import { apiService } from '../services/api';
 import { USE_MOCKDATA } from '../config';
+
 import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import { useDetection } from '../features/nvrs/useDetection';
 import { useEffect } from 'react';
@@ -67,11 +68,12 @@ export default function LiveViewPage() {
             streamUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
           } else {
             // Resolve stream URL
-            const res = await api.post(`/streams/resolve`, [
+            const res = await apiService.streams.resolve([
               { nvrId: camera.nvrId, channel: camera.channel }
             ]);
             streamUrl = res.data[0].whepUrl;
           }
+
           
           // Update channel with stream URL
           addChannel({ ...camera, streamUrl }, cellIndex);

@@ -1,5 +1,6 @@
 import { useChannels } from './useChannels';
-import { Loader2, AlertCircle, Video, GripVertical } from 'lucide-react';
+import { Loader2, AlertCircle, Video, GripVertical, WifiOff } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import type { Camera } from '../../types/camera';
 import { useDraggable } from '@dnd-kit/core';
 import { useGridStore } from '../../store/useGridStore';
@@ -56,7 +57,7 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: channel && channel.id ? `channel-${channel.id}` : `empty-${index}`,
-    data: channel,
+    data: channel ?? {},
     disabled: !channel || !channel.id || channel.status === 'offline' || isInUse,
   });
 
@@ -99,6 +100,11 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
                 'bg-[#383838]'
               }`} />
               <span className="text-[9px] font-mono text-[#8d90a0] uppercase">{channel.status || 'unknown'}</span>
+              {isOffline && channel.lastSeenAt && (
+                <span className="text-[8px] font-mono text-[#8d90a0]/60 ml-2">
+                  ({formatDistanceToNow(new Date(channel.lastSeenAt))} ago)
+                </span>
+              )}
             </div>
           </div>
         )}
