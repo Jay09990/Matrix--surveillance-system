@@ -23,6 +23,11 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
     let retryCount = 0;
     const maxRetries = 1;
     
+    const handleFailure = () => {
+      console.warn('Stream failure detected, marking as no-signal');
+      addChannel({ ...channel, status: 'no-signal', streamUrl: undefined }, cellIndex);
+    };
+
     const startWebRTC = async () => {
       try {
         let whepUrl = streamUrl.endsWith('/whep') ? streamUrl : streamUrl.replace(/\/?$/, "/whep");
@@ -32,7 +37,6 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           const normalized = whepUrl.replace(/^rtsp:\/\//i, "http://");
           const urlObj = new URL(normalized);
 
-          // Sync hostname with API base URL to respect .env settings
           const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
           try {
             const apiHost = new URL(apiBaseUrl).hostname;
@@ -72,6 +76,12 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           }
         };
 
+        pc.oniceconnectionstatechange = () => {
+          if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+            handleFailure();
+          }
+        };
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -96,7 +106,6 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           sdp: res.data,
         });
         
-        // Reset retry on success
         retryCount = 0;
 
       } catch (err) {
@@ -105,15 +114,18 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           retryCount++;
           setTimeout(startWebRTC, 2000);
         } else {
-          // Update store to NO SIGNAL
-          addChannel({ ...channel, status: 'no-signal' }, cellIndex);
+          handleFailure();
         }
       }
     };
 
     const startHls = () => {
       if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true });
+        const hls = new Hls({ 
+          enableWorker: true,
+          manifestLoadingMaxRetry: 2,
+          levelLoadingMaxRetry: 2
+        });
         hlsRef.current = hls;
         hls.loadSource(streamUrl);
         hls.attachMedia(video);
@@ -122,8 +134,7 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
         });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
-            console.error("HLS fatal error:", data);
-            addChannel({ ...channel, status: 'no-signal' }, cellIndex);
+            handleFailure();
           }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -140,7 +151,17 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
       startWebRTC();
     }
 
+    // Monitor video element for stalls
+    const onStalled = () => {
+      // If stalled for more than 5 seconds, it's a failure
+      const timer = setTimeout(handleFailure, 5000);
+      video.onplaying = () => clearTimeout(timer);
+    };
+
+    video.addEventListener('stalled', onStalled);
+
     return () => {
+      video.removeEventListener('stalled', onStalled);
       pcRef.current?.close();
       pcRef.current = null;
       if (hlsRef.current) {
@@ -149,6 +170,7 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
       }
       if (video) video.srcObject = null;
     };
+
   }, [streamUrl]);
 
   return (

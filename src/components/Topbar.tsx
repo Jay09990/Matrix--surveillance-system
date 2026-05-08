@@ -11,14 +11,28 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
+import { apiService } from '../services/api';
+
 export const Topbar = () => {
+
   const { user, clearSession } = useSessionStore();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    clearSession();
-    navigate('/login');
+  const handleLogout = async () => {
+    try {
+      // Try to stop any active scanning before logging out
+      const res = await apiService.nvrs.detection.active();
+      if (res.data?.nvrId) {
+        await apiService.nvrs.detection.stop(res.data.nvrId);
+      }
+    } catch (e) {
+      // Ignore errors during logout cleanup
+    } finally {
+      clearSession();
+      navigate('/login');
+    }
   };
+
 
   const isAdmin = user?.role?.toLowerCase() === 'admin';
 

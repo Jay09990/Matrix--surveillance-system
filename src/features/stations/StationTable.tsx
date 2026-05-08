@@ -1,8 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
+
 import { toast } from 'sonner'
-import { Pencil, Trash2, Loader2, Search, AlertCircle } from 'lucide-react';
+import { Pencil, Trash2, Loader2, Search, AlertCircle, Activity } from 'lucide-react';
+
+
+
 import { formatDistanceToNow } from 'date-fns';
 import { useAllNVRs } from '../nvrs/useNVRs';
 import { useSessionStore } from '../../store/useSessionStore';
@@ -87,7 +91,9 @@ export function StationTable() {
     onError: () => toast.error('Failed to delete NVR'),
   });
 
+
   // ── Loading ──────────────────────────────────────────────────────────────────
+
   if (isLoading) {
     return (
       <div className="w-full h-64 flex flex-col items-center justify-center text-[#8d90a0]">
@@ -158,8 +164,8 @@ export function StationTable() {
                 <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider">Station</TableHead>
                 <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider">NVR Name & IP</TableHead>
                 <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider">Type</TableHead>
-                <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider">Cameras</TableHead>
                 <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider">Status</TableHead>
+
                 <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider">Last Seen / Offline Since</TableHead>
                 {isAdmin && (
                   <TableHead className="text-[#8d90a0] text-xs font-bold uppercase tracking-wider text-right">Actions</TableHead>
@@ -214,13 +220,9 @@ export function StationTable() {
                     </Badge>
                   </TableCell>
 
-                  {/* Cameras */}
-                  <TableCell className="text-sm text-[#8d90a0] font-mono">
-                    {nvr._count.cameras}
-                  </TableCell>
-
                   {/* Status */}
                   <TableCell>
+
                     <StatusBadge status={nvr.status as any} />
                   </TableCell>
 
@@ -228,7 +230,7 @@ export function StationTable() {
                   <TableCell>
                     <div className="flex flex-col gap-0.5">
                       {nvr.lastSeenAt && (
-                        <span className="text-[10px] font-mono text-[#8d90a0]">
+                        <span className="text-sm font-mono text-[#8d90a0]">
                           Seen: {formatDistanceToNow(new Date(nvr.lastSeenAt))} ago
                         </span>
                       )}
@@ -247,6 +249,7 @@ export function StationTable() {
                   {isAdmin && (
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+
                         <Button
                           variant="ghost"
                           size="icon"
@@ -268,6 +271,7 @@ export function StationTable() {
                       </div>
                     </TableCell>
                   )}
+
                 </TableRow>
               ))}
             </TableBody>

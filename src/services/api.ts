@@ -26,11 +26,12 @@ export const apiService = {
 
     // Detection
     detection: {
-      status: (nvrId: string) => api.get(`/nvrs/${nvrId}/detection/status`),
       start: (nvrId: string) => api.post(`/nvrs/${nvrId}/detection/start`),
       stop: (nvrId: string) => api.post(`/nvrs/${nvrId}/detection/stop`),
-      active: () => api.get('/detection/active'),
+      active: () => api.get<{ isRunning: boolean, activeNvrIds: string[] }>('/detection/active'),
+
     },
+
 
   },
 

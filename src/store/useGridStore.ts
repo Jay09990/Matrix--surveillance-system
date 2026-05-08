@@ -8,7 +8,10 @@ interface GridState {
   activeChannels: (Camera | null)[]; // Array index corresponds to cell index
   setLayout: (layout: GridLayout) => void;
   addChannel: (channel: Camera, cellIndex: number) => void;
+  updateChannelStatus: (cameraId: string, status: string, lastSeenAt?: string) => void;
+  updateNvrStatus: (nvrId: string, status: string, lastSeenAt?: string, offlineSince?: string) => void;
   removeChannel: (cellIndex: number) => void;
+
   clearGrid: () => void;
 }
 
@@ -46,7 +49,38 @@ export const useGridStore = create<GridState>((set) => ({
     newChannels[cellIndex] = channel;
     return { activeChannels: newChannels };
   }),
+  updateChannelStatus: (cameraId, status, lastSeenAt) => set((state) => ({
+    activeChannels: state.activeChannels.map((cam) => 
+      cam?.id === cameraId 
+        ? { 
+            ...cam, 
+            status, 
+            lastSeenAt: lastSeenAt || cam.lastSeenAt,
+            streamUrl: status !== 'online' ? undefined : cam.streamUrl 
+          } as Camera
+        : cam
+    )
+  })),
+  updateNvrStatus: (nvrId, status, lastSeenAt, offlineSince) => set((state) => ({
+    activeChannels: state.activeChannels.map((cam) => {
+      if (cam?.nvrId === nvrId) {
+        const isOnline = status === 'online';
+        return { 
+          ...cam, 
+          status: isOnline ? 'online' : 'offline', 
+          lastSeenAt: lastSeenAt || cam.lastSeenAt,
+          offlineSince: offlineSince || cam.offlineSince,
+          streamUrl: isOnline ? cam.streamUrl : undefined
+        } as Camera;
+      }
+      return cam;
+    })
+  })),
+
+
+
   removeChannel: (cellIndex) => set((state) => {
+
     const newChannels = [...state.activeChannels];
     newChannels[cellIndex] = null;
     return { activeChannels: newChannels };

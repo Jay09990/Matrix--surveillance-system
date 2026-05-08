@@ -10,6 +10,7 @@ import AddNVRPage from './pages/AddNVRPage';
 
 import AdminDashboardPage from './pages/AdminDashboardPage';
 
+import { SocketProvider } from './components/SocketProvider';
 
 const router = createBrowserRouter([
   {
@@ -54,13 +55,16 @@ const router = createBrowserRouter([
   },
 ]);
 
+
 function App() {
+
   return (
-    <>
+    <SocketProvider>
       <RouterProvider router={router} />
       <Toaster position="bottom-right" theme="dark" richColors />
-    </>
+    </SocketProvider>
   );
 }
+
 
 export default App;

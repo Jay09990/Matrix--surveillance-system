@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
+
 import type { Camera } from '../../types/camera';
 import { useGridStore } from '../../store/useGridStore';
 import { StreamPlayer } from '../streams/StreamPlayer';
-import { Loader2, VideoOff, WifiOff, X } from 'lucide-react';
+import { Loader2, VideoOff, WifiOff, X, GripHorizontal } from 'lucide-react';
+import { apiService } from '../../services/api';
+import { USE_MOCKDATA } from '../../config';
+
 import { formatDistanceToNow } from 'date-fns';
 
 interface GridCellProps {
@@ -12,10 +16,46 @@ interface GridCellProps {
 }
 
 export const GridCell = ({ index, channel }: GridCellProps) => {
-  const { removeChannel } = useGridStore();
-  const { isOver, setNodeRef } = useDroppable({
+  const { removeChannel, addChannel } = useGridStore();
+  
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
     id: `cell-${index}`,
     data: { index },
+  });
+
+  // Auto-resolve stream if online but no URL
+  useEffect(() => {
+    if (channel && channel.status === 'online' && !channel.streamUrl) {
+      const resolve = async () => {
+        try {
+          if (USE_MOCKDATA) {
+            await new Promise(r => setTimeout(r, 1000));
+            addChannel({ ...channel, streamUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8' }, index);
+          } else {
+            const res = await apiService.streams.resolve([{ nvrId: channel.nvrId, channel: channel.channel }]);
+            if (res.data?.[0]?.whepUrl) {
+              addChannel({ ...channel, streamUrl: res.data[0].whepUrl }, index);
+            }
+          }
+        } catch (e) {
+          console.error('Auto-resolve failed:', e);
+        }
+      };
+      resolve();
+    }
+  }, [channel?.id, channel?.status, channel?.streamUrl, index, addChannel]);
+
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `draggable-cell-${index}`,
+    data: { ...channel, fromIndex: index },
+    disabled: !channel,
   });
 
   const [isInView, setIsInView] = useState(false);
@@ -37,11 +77,19 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
     return () => observer.disconnect();
   }, []);
 
-  // Sync ref with droppable and cellRef
+  // Combined ref setter
   const setRefs = (element: HTMLDivElement | null) => {
-    setNodeRef(element);
+    setDropRef(element);
+    setDragRef(element);
     cellRef.current = element;
   };
+
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+    zIndex: isDragging ? 50 : undefined,
+    opacity: isDragging ? 0.5 : 1,
+  } : undefined;
+
 
   if (!channel) {
     return (
@@ -55,6 +103,8 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
           <span className="font-mono text-[#383838] text-xl block mb-2">{index + 1}</span>
           <span className="text-[10px] font-bold tracking-widest text-[#383838] uppercase">EMPTY</span>
         </div>
+
+
       </div>
     );
   }
@@ -65,6 +115,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
   return (
     <div
       ref={setRefs}
+      style={style}
       className={`w-full h-full min-h-[150px] border relative group ${
         isOver ? 'border-[#2563eb]' : 'border-[#1e1e1e]'
       } bg-black overflow-hidden flex items-center justify-center`}
@@ -72,9 +123,18 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
       {/* Overlay top bar */}
       <div className="absolute top-0 left-0 right-0 p-2 z-10 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
         <div className="flex items-center gap-2">
+          {/* Drag Handle */}
+          <div 
+            {...attributes} 
+            {...listeners} 
+            className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-white/10 rounded-sm text-[#383838] group-hover:text-[#8d90a0] transition-colors"
+          >
+            <GripHorizontal className="w-3.5 h-3.5" />
+          </div>
           <span className="font-mono text-[#2563eb] text-[10px] font-bold">CH{channel.channel.toString().padStart(2, '0')}</span>
-          <span className="font-sans text-white text-xs font-semibold truncate max-w-[150px] drop-shadow-md">{channel.name}</span>
+          <span className="font-sans text-white text-xs font-semibold truncate max-w-[120px] drop-shadow-md">{channel.name}</span>
         </div>
+
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-sm ${
             isOffline || isNoSignal ? 'bg-[#e03e3e]' :

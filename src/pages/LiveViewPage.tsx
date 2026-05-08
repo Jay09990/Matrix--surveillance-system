@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useParams, Navigate } from 'react-router-dom';
+import { useParams, Navigate, useNavigate } from 'react-router-dom';
+
 import { Topbar } from '../components/Topbar';
 import { NVRList } from '../features/nvrs/NVRList';
 import { ChannelList } from '../features/cameras/ChannelList';
@@ -13,13 +14,16 @@ import type { Camera } from '../types/camera';
 import { apiService } from '../services/api';
 import { USE_MOCKDATA } from '../config';
 
-import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, ArrowLeft } from 'lucide-react';
+
 import { useDetection } from '../features/nvrs/useDetection';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 
 export default function LiveViewPage() {
+  const navigate = useNavigate();
   const { stationId } = useParams<{ stationId: string }>();
+
   const [selectedNvrId, setSelectedNvrId] = useState<string | null>(null);
   const { startDetection, stopDetection } = useDetection(selectedNvrId);
 
@@ -55,8 +59,15 @@ export default function LiveViewPage() {
     if (over && active.data.current) {
       const cellIndex = over.data.current?.index;
       if (cellIndex !== undefined) {
-        const camera = active.data.current as Camera;
+        const camera = active.data.current as Camera & { fromIndex?: number };
         
+        // If it's a re-drag (already has a stream), just move it
+        if (camera.streamUrl) {
+          addChannel(camera, cellIndex);
+          return;
+        }
+
+        // Otherwise, it's a new placement from the sidebar
         // Temporarily add channel without stream to show LOADING state
         addChannel({ ...camera, streamUrl: undefined }, cellIndex);
         
@@ -64,24 +75,21 @@ export default function LiveViewPage() {
           let streamUrl = '';
           if (USE_MOCKDATA) {
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            // Return a public HLS test stream for demonstration
             streamUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
           } else {
-            // Resolve stream URL
             const res = await apiService.streams.resolve([
               { nvrId: camera.nvrId, channel: camera.channel }
             ]);
             streamUrl = res.data[0].whepUrl;
           }
 
-          
           // Update channel with stream URL
           addChannel({ ...camera, streamUrl }, cellIndex);
         } catch (error) {
           console.error('Failed to resolve stream:', error);
-          // Set to NO SIGNAL if failed
           addChannel({ ...camera, status: 'no-signal' }, cellIndex);
         }
+
       }
     }
   };
@@ -97,15 +105,27 @@ export default function LiveViewPage() {
       >
         <div className="flex-1 flex overflow-hidden relative">
           {/* Sidebar */}
-          <div 
-            className={`bg-[#131313] border-r border-[#2a2a2a] flex flex-col shrink-0 transition-all duration-300 ease-in-out relative ${
-              isSidebarCollapsed ? 'w-0 border-none' : 'w-72'
-            }`}
-          >
-            <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-200 ${
-              isSidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
-            }`}>
+           <div 
+             className={`bg-[#131313] border-r border-[#2a2a2a] flex flex-col shrink-0 transition-all duration-300 ease-in-out relative ${
+               isSidebarCollapsed ? 'w-0 border-none' : 'w-72'
+             }`}
+           >
+             <div className={`flex-1 flex flex-col overflow-hidden transition-opacity duration-200 ${
+               isSidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+             }`}>
+              {/* Back Button */}
+               <div className="p-4 border-b border-[#2a2a2a]">
+                 <button
+                   onClick={() => navigate('/stations')}
+                   className="flex items-center gap-2 text-[#8d90a0] hover:text-white transition-colors group w-full"
+                 >
+                   <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform text-[#2563eb]" />
+                   <span className="text-xs font-bold uppercase tracking-widest">Back to Dashboard</span>
+                 </button>
+               </div>
+
               <SectionLabel>NVR Devices</SectionLabel>
+
               <div className="h-1/3 overflow-y-auto no-scrollbar border-b border-[#2a2a2a]">
                 <NVRList 
                   stationId={stationId!} 
