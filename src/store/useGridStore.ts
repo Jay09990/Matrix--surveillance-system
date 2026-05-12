@@ -13,6 +13,7 @@ interface GridState {
   removeChannel: (cellIndex: number) => void;
 
   clearGrid: () => void;
+  refreshStreams: () => void;
 }
 
 const getSlotCount = (layout: GridLayout) => {
@@ -39,41 +40,40 @@ export const useGridStore = create<GridState>((set) => ({
   }),
   addChannel: (channel, cellIndex) => set((state) => {
     const newChannels = [...state.activeChannels];
-    
+
     // Uniqueness: Remove camera from any other slot it might be in
     const existingIndex = newChannels.findIndex(c => c?.id === channel.id);
     if (existingIndex !== -1) {
       newChannels[existingIndex] = null;
     }
-    
+
     newChannels[cellIndex] = channel;
     return { activeChannels: newChannels };
   }),
   updateChannelStatus: (cameraId, status, lastSeenAt) => set((state) => ({
-    activeChannels: state.activeChannels.map((cam) => 
-      cam?.id === cameraId 
-        ? { 
-            ...cam, 
-            status, 
-            lastSeenAt: lastSeenAt || cam.lastSeenAt,
-            streamUrl: status !== 'online' ? undefined : cam.streamUrl 
-          } as Camera
+    activeChannels: state.activeChannels.map((cam) =>
+      cam?.id === cameraId
+        ? {
+          ...cam,
+          status,
+          lastSeenAt: lastSeenAt || cam.lastSeenAt,
+        } as Camera
         : cam
     )
   })),
+
   updateNvrStatus: (nvrId, status, lastSeenAt, offlineSince) => set((state) => ({
     activeChannels: state.activeChannels.map((cam) => {
       if (cam?.nvrId === nvrId) {
-        const isOnline = status === 'online';
-        return { 
-          ...cam, 
-          status: isOnline ? 'online' : 'offline', 
+        const isOnline = status === 'online'
+        return {
+          ...cam,
+          status: isOnline ? 'online' : 'offline',
           lastSeenAt: lastSeenAt || cam.lastSeenAt,
           offlineSince: offlineSince || cam.offlineSince,
-          streamUrl: isOnline ? cam.streamUrl : undefined
-        } as Camera;
+        } as Camera
       }
-      return cam;
+      return cam
     })
   })),
 
@@ -87,5 +87,8 @@ export const useGridStore = create<GridState>((set) => ({
   }),
   clearGrid: () => set((state) => ({
     activeChannels: new Array(getSlotCount(state.layout)).fill(null)
+  })),
+  refreshStreams: () => set((state) => ({
+    activeChannels: state.activeChannels.map(cam => cam ? { ...cam, streamUrl: undefined } : null)
   })),
 }));

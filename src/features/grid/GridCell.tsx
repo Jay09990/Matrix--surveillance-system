@@ -23,9 +23,9 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
     data: { index },
   });
 
-  // Auto-resolve stream if online but no URL
+  // Auto-resolve stream if missing URL
   useEffect(() => {
-    if (channel && channel.status === 'online' && !channel.streamUrl) {
+    if (channel && !channel.streamUrl) {
       const resolve = async () => {
         try {
           if (USE_MOCKDATA) {
@@ -35,6 +35,12 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
             const res = await apiService.streams.resolve([{ nvrId: channel.nvrId, channel: channel.channel }]);
             if (res.data?.[0]?.whepUrl) {
               addChannel({ ...channel, streamUrl: res.data[0].whepUrl }, index);
+            } else {
+              // If we can't resolve, mark as no-signal to stop infinite retries
+              // but only if it's not currently offline
+              if (channel.status !== 'offline') {
+                addChannel({ ...channel, status: 'no-signal' }, index);
+              }
             }
           }
         } catch (e) {
@@ -43,7 +49,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
       };
       resolve();
     }
-  }, [channel?.id, channel?.status, channel?.streamUrl, index, addChannel]);
+  }, [channel?.id, channel?.streamUrl, index, addChannel]);
 
 
   const {
@@ -58,24 +64,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
     disabled: !channel,
   });
 
-  const [isInView, setIsInView] = useState(false);
   const cellRef = useRef<HTMLDivElement>(null);
-
-  // Use IntersectionObserver to pause/destroy streams off-screen
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        setIsInView(entry.isIntersecting);
-      },
-      { threshold: 0.1 }
-    );
-
-    if (cellRef.current) {
-      observer.observe(cellRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, []);
 
   // Combined ref setter
   const setRefs = (element: HTMLDivElement | null) => {
@@ -91,11 +80,19 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
   } : undefined;
 
 
+  useEffect(() => {
+    if (channel?.streamUrl) {
+      console.log(`[GridCell] Cell ${index} has streamUrl: ${channel.streamUrl}`);
+    } else if (channel) {
+      console.log(`[GridCell] Cell ${index} waiting for streamUrl (status: ${channel.status})`);
+    }
+  }, [channel?.streamUrl, channel?.status, index]);
+
   if (!channel) {
     return (
       <div
         ref={setRefs}
-        className={`w-full h-full min-h-[150px] border ${
+        className={`w-full h-full border ${
           isOver ? 'border-[#2563eb] bg-[#2563eb]/5' : 'border-[#1e1e1e] bg-[#131313]'
         } flex items-center justify-center transition-colors relative group`}
       >
@@ -116,7 +113,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
     <div
       ref={setRefs}
       style={style}
-      className={`w-full h-full min-h-[150px] border relative group ${
+      className={`w-full h-full border relative group ${
         isOver ? 'border-[#2563eb]' : 'border-[#1e1e1e]'
       } bg-black overflow-hidden flex items-center justify-center`}
     >
@@ -137,6 +134,8 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
 
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-sm ${
+            // If we have a stream URL, we consider it "online" for the indicator
+            channel.streamUrl ? 'bg-[#16a34a]' :
             isOffline || isNoSignal ? 'bg-[#e03e3e]' :
             channel.status === 'warning' ? 'bg-[#f59e0b]' :
             'bg-[#16a34a]'
@@ -152,7 +151,9 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
         </div>
       </div>
 
-      {isOffline ? (
+      {channel.streamUrl ? (
+        <StreamPlayer streamUrl={channel.streamUrl} channel={channel} cellIndex={index} />
+      ) : isOffline ? (
         <div className="flex flex-col items-center justify-center text-[#e03e3e]">
           <WifiOff className="w-8 h-8 mb-2 opacity-50" />
           <span className="text-[10px] font-bold tracking-widest uppercase">OFFLINE</span>
@@ -167,14 +168,12 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
           <VideoOff className="w-8 h-8 mb-2 opacity-50" />
           <span className="text-[10px] font-bold tracking-widest uppercase">NO SIGNAL</span>
         </div>
-      ) : isInView && channel.streamUrl ? (
-        <StreamPlayer streamUrl={channel.streamUrl} channel={channel} cellIndex={index} />
-      ) : isInView && !channel.streamUrl ? (
+      ) : (
         <div className="flex flex-col items-center justify-center text-[#2563eb]">
           <Loader2 className="w-8 h-8 mb-2 animate-spin" />
           <span className="text-[10px] font-bold tracking-widest uppercase">CONNECTING...</span>
         </div>
-      ) : null}
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import { useSessionStore } from '../store/useSessionStore';
-import { Monitor, Settings, PlusCircle, LogOut, ChevronDown } from 'lucide-react';
+import { Monitor, Settings, PlusCircle, LogOut, ChevronDown, Film } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -47,6 +47,14 @@ export const Topbar = () => {
         <span className="text-[#8d90a0] font-mono text-xs tracking-widest uppercase">
           VMS Portal
         </span>
+        <div className="h-4 w-px bg-[#2a2a2a]" />
+        <Link 
+          to="/playback" 
+          className="text-xs font-bold uppercase tracking-widest text-[#8d90a0] hover:text-white transition-colors flex items-center gap-1.5"
+        >
+          <Film className="w-3.5 h-3.5 text-[#2563eb]" />
+          Recordings
+        </Link>
       </div>
 
       <div className="flex items-center gap-3">

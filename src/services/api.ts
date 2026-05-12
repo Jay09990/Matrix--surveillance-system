@@ -31,8 +31,6 @@ export const apiService = {
       active: () => api.get<{ isRunning: boolean, activeNvrIds: string[] }>('/detection/active'),
 
     },
-
-
   },
 
   // --- Cameras & Streams ---
@@ -43,6 +41,15 @@ export const apiService = {
   streams: {
     resolve: (payload: { nvrId: string; channel: number }[]) =>
       api.post('/streams/resolve', payload),
+  },
+
+  // --- Recordings ---
+  recordings: {
+    listCameras: () => api.get<any[]>('/recordings'),
+    listByCamera: (nvrId: string, channel: number, params?: { from?: string; to?: string }) =>
+      api.get<any[]>(`/recordings/${nvrId}/${channel}`, { params }),
+    getStreamUrl: (recordingId: string) => `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/recordings/stream/${recordingId}`,
+    stats: () => api.get<any>('/recordings/stats'),
   },
 
 };

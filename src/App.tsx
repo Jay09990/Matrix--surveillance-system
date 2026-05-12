@@ -9,6 +9,7 @@ import LiveViewPage from './pages/LiveViewPage';
 import AddNVRPage from './pages/AddNVRPage';
 
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import PlaybackPage from './pages/PlaybackPage';
 
 import { SocketProvider } from './components/SocketProvider';
 
@@ -32,6 +33,10 @@ const router = createBrowserRouter([
       {
         path: '/live/:stationId',
         element: <LiveViewPage />,
+      },
+      {
+        path: '/playback',
+        element: <PlaybackPage />,
       },
       {
         path: '/admin',
