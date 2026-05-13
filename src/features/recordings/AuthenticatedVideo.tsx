@@ -4,13 +4,14 @@ import { apiService } from '../../services/api';
 interface AuthenticatedVideoProps {
   recordingId: string;
   className?: string;
+  offsetSeconds?: number;
 }
 
 /**
  * Authenticated video player for recordings using the backend-suggested 
  * tokenized stream URL strategy.
  */
-export function AuthenticatedVideo({ recordingId, className }: AuthenticatedVideoProps) {
+export function AuthenticatedVideo({ recordingId, className, offsetSeconds = 0 }: AuthenticatedVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -31,11 +32,8 @@ export function AuthenticatedVideo({ recordingId, className }: AuthenticatedVide
         if (isCancelled) return;
 
         // Step 2: Set the URL (backend returns relative URL, so we prepend base if needed)
-        // If backend returns absolute URL or we handle it in apiService, use as is.
-        // Based on suggestion: /api/recordings/stream/abc123?token=...
         const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
         
-        // Ensure we don't double up on /api if the backend returns it
         const finalUrl = data.streamUrl.startsWith('http') 
           ? data.streamUrl 
           : `${baseUrl.replace(/\/api$/, '')}${data.streamUrl}`;
@@ -61,6 +59,12 @@ export function AuthenticatedVideo({ recordingId, className }: AuthenticatedVide
       isCancelled = true;
     };
   }, [recordingId]);
+
+  const handleMetadataLoaded = () => {
+    if (videoRef.current && offsetSeconds > 0) {
+      videoRef.current.currentTime = offsetSeconds;
+    }
+  };
 
   if (isLoading) {
     return (
@@ -92,7 +96,9 @@ export function AuthenticatedVideo({ recordingId, className }: AuthenticatedVide
       src={streamUrl || undefined}
       controls
       autoPlay
+      crossOrigin="anonymous"
       className={className}
+      onLoadedMetadata={handleMetadataLoaded}
       onError={() => {
         setErrorMsg('Playback error. The stream may have expired or is unsupported.');
       }}

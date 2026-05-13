@@ -56,6 +56,21 @@ export const apiService = {
         params: { start, duration },
         responseType: 'blob'
       }),
+
+    timeline: (nvrId: string, channel: number, date: string) =>
+      api.get<any[]>(`/recordings/${nvrId}/${channel}/timeline`, { params: { date } }),
+
+    days: (nvrId: string, channel: number) =>
+      api.get<{ days: string[] }>(`/recordings/${nvrId}/${channel}/days`),
+
+    seek: (nvrId: string, channel: number, timestamp: string) =>
+      api.get<{ id: string; offsetSeconds: number }>(`/recordings/${nvrId}/${channel}/seek`, { params: { timestamp } }),
+
+    getFile: (recordingId: string) =>
+      api.get<any>(`/recordings/file/${recordingId}`),
+
+    deleteFile: (recordingId: string) =>
+      api.delete(`/recordings/file/${recordingId}`),
   },
 
 };
