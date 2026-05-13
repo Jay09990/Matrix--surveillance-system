@@ -1,8 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/axios';
 
-const BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
-
 export function useRecordingCameras() {
   return useQuery({
     queryKey: ['recordings', 'cameras'],
@@ -39,8 +37,4 @@ export function useStorageStats() {
       return res.data;
     },
   });
-}
-
-export function getRecordingStreamUrl(recordingId: string): string {
-  return `${BASE}/recordings/stream/${recordingId}`;
 }

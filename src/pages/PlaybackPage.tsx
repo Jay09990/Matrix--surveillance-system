@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Topbar } from '../components/Topbar';
 import { SectionLabel } from '../components/SectionLabel';
-import { useRecordingCameras, useRecordings, getRecordingStreamUrl } from '../features/recordings/useRecordings';
+import { useRecordingCameras, useRecordings } from '../features/recordings/useRecordings';
 import { AuthenticatedVideo } from '../features/recordings/AuthenticatedVideo';
 import { api } from '../lib/axios';
 import { 
@@ -23,12 +23,26 @@ export default function PlaybackPage() {
   const navigate = useNavigate();
   const [selectedCamera, setSelectedCamera] = useState<{ nvrId: string; channel: number; name: string } | null>(null);
   const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   
   const { data: cameras, isLoading: isLoadingCameras } = useRecordingCameras();
+  
+  // Calculate the date range for the selected day (start of day to end of day)
+  const dateRange = {
+    from: `${selectedDate}T00:00:00.000Z`,
+    to: `${selectedDate}T23:59:59.999Z`
+  };
+
   const { data: recordings, isLoading: isLoadingRecordings } = useRecordings(
     selectedCamera?.nvrId || null, 
-    selectedCamera?.channel ?? null
+    selectedCamera?.channel ?? null,
+    dateRange
   );
+  
+  const [customTime, setCustomTime] = useState<string>('12:00');
+  const [customDuration, setCustomDuration] = useState<number>(30); // minutes
+  const [isExporting, setIsExporting] = useState(false);
+  const [customRecordingUrl, setCustomRecordingUrl] = useState<string | null>(null);
 
   const selectedRecording = recordings?.find(r => r.id === selectedRecordingId);
 
@@ -59,6 +73,29 @@ export default function PlaybackPage() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Download failed:', err);
+    }
+  };
+
+  const handleCustomExport = async () => {
+    if (!selectedCamera) return;
+    setIsExporting(true);
+    try {
+      const startIso = `${selectedDate}T${customTime}:00.000Z`;
+      const durationSeconds = customDuration * 60;
+      
+      const res = await api.get(`/recordings/${selectedCamera.nvrId}/${selectedCamera.channel}/export`, {
+        params: { start: startIso, duration: durationSeconds },
+        responseType: 'blob'
+      });
+      
+      const url = URL.createObjectURL(res.data);
+      if (customRecordingUrl) URL.revokeObjectURL(customRecordingUrl);
+      setCustomRecordingUrl(url);
+      setSelectedRecordingId('custom'); // Special ID to trigger custom player
+    } catch (err) {
+      console.error('Custom export failed:', err);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -174,11 +211,65 @@ export default function PlaybackPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-sm bg-[#1a1a1a] border border-[#2a2a2a] text-[#8d90a0]">
-                     <Calendar className="w-3.5 h-3.5" />
-                     <span className="text-xs font-semibold">{format(new Date(), 'MMM dd, yyyy')}</span>
-                   </div>
+                <div className="flex items-center gap-4">
+                  {/* Custom Range Search */}
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-sm bg-[#1a1a1a] border border-[#2a2a2a]">
+                    <div className="flex flex-col relative group/time cursor-pointer">
+                      <span className="text-[8px] font-bold text-[#8d90a0] uppercase mb-0.5">Start Time</span>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-[#2563eb]" />
+                        <input 
+                          type="time" 
+                          value={customTime}
+                          onChange={(e) => setCustomTime(e.target.value)}
+                          className="bg-transparent text-white text-xs font-mono outline-none cursor-pointer [color-scheme:dark]"
+                        />
+                      </div>
+                    </div>
+                    <div className="w-px h-6 bg-[#2a2a2a] mx-1" />
+                    <div className="flex flex-col">
+                      <span className="text-[8px] font-bold text-[#8d90a0] uppercase mb-0.5">Duration</span>
+                      <select 
+                        value={customDuration}
+                        onChange={(e) => setCustomDuration(Number(e.target.value))}
+                        className="bg-transparent text-white text-xs font-mono outline-none"
+                      >
+                        <option value={1} className="bg-[#1a1a1a]">1m</option>
+                        <option value={5} className="bg-[#1a1a1a]">5m</option>
+                        <option value={15} className="bg-[#1a1a1a]">15m</option>
+                        <option value={30} className="bg-[#1a1a1a]">30m</option>
+                        <option value={60} className="bg-[#1a1a1a]">60m</option>
+                      </select>
+                    </div>
+                    <Button 
+                      size="sm" 
+                      onClick={handleCustomExport}
+                      disabled={isExporting}
+                      className="ml-2 h-7 bg-[#2563eb] hover:bg-[#2563eb]/80 text-[10px] font-bold uppercase"
+                    >
+                      {isExporting ? 'Fetching...' : 'Play Range'}
+                    </Button>
+                  </div>
+
+                  <div className="relative group">
+                    <button className="flex items-center gap-2 px-4 py-2 rounded-sm bg-[#1a1a1a] border border-[#2a2a2a] text-[#8d90a0] hover:text-white hover:border-[#383838] transition-all group-hover:shadow-[0_0_15px_rgba(37,99,235,0.1)]">
+                      <Calendar className="w-4 h-4 text-[#2563eb]" />
+                      <span className="text-sm font-bold uppercase tracking-wider">
+                        {format(new Date(selectedDate), 'MMM dd, yyyy')}
+                      </span>
+                    </button>
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => {
+                        setSelectedDate(e.target.value);
+                        setSelectedRecordingId(null); // Reset playback when date changes
+                        if (customRecordingUrl) URL.revokeObjectURL(customRecordingUrl);
+                        setCustomRecordingUrl(null);
+                      }}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -188,16 +279,35 @@ export default function PlaybackPage() {
                 <div className="flex-1 min-h-0 bg-black flex items-center justify-center relative group">
                   {selectedRecordingId ? (
                     <>
-                      <AuthenticatedVideo
-                        key={selectedRecordingId}
-                        recordingId={selectedRecordingId}
-                        className="max-h-full max-w-full"
-                      />
+                      {selectedRecordingId === 'custom' ? (
+                        <video 
+                          key="custom-player"
+                          src={customRecordingUrl!}
+                          controls 
+                          autoPlay 
+                          className="max-h-full max-w-full"
+                        />
+                      ) : (
+                        <AuthenticatedVideo
+                          key={selectedRecordingId}
+                          recordingId={selectedRecordingId}
+                          className="max-h-full max-w-full"
+                        />
+                      )}
                       <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                          <Button
                           size="sm"
                           className="bg-black/50 hover:bg-black/80 text-white border border-white/10 backdrop-blur-md"
-                          onClick={() => handleDownload(selectedRecording)}
+                          onClick={() => {
+                            if (selectedRecordingId === 'custom') {
+                              const link = document.createElement('a');
+                              link.href = customRecordingUrl!;
+                              link.download = `Custom_Export_${selectedDate}_${customTime}.mp4`;
+                              link.click();
+                            } else {
+                              handleDownload(selectedRecording);
+                            }
+                          }}
                          >
                            <Download className="w-4 h-4 mr-2" />
                            Download
@@ -221,7 +331,7 @@ export default function PlaybackPage() {
                       <Film className="w-4 h-4 text-[#2563eb]" />
                       <h3 className="text-xs font-bold text-white uppercase tracking-widest">Footage Clips</h3>
                     </div>
-                    <span className="text-[10px] font-mono text-[#8d90a0] uppercase">{recordings?.length || 0} Recorded Sessions Found</span>
+                    <span className="text-[10px] font-mono text-[#8d90a0] uppercase">{recordings?.length || 0} Clips for {format(new Date(selectedDate), 'MMM dd')}</span>
                   </div>
 
                   <div className="flex-1 overflow-x-auto overflow-y-hidden p-4">

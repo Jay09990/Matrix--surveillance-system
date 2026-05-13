@@ -48,8 +48,14 @@ export const apiService = {
     listCameras: () => api.get<any[]>('/recordings'),
     listByCamera: (nvrId: string, channel: number, params?: { from?: string; to?: string }) =>
       api.get<any[]>(`/recordings/${nvrId}/${channel}`, { params }),
-    getStreamUrl: (recordingId: string) => `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/recordings/stream/${recordingId}`,
+    getStreamToken: (recordingId: string) => 
+      api.post<{ streamUrl: string }>(`/recordings/token/${recordingId}`),
     stats: () => api.get<any>('/recordings/stats'),
+    export: (nvrId: string, channel: number, start: string, duration: number) =>
+      api.get(`/recordings/${nvrId}/${channel}/export`, {
+        params: { start, duration },
+        responseType: 'blob'
+      }),
   },
 
 };
