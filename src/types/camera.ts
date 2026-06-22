@@ -3,10 +3,13 @@ export interface Camera {
   nvrId: string;
   channel: number;
   name: string;
-  status: 'online' | 'offline' | 'warning' | 'no-signal';
-  lastSeenAt?: string;
-  streamUrl?: string; // e.g. the WHEP endpoint or HLS fallback
-  areaTag?: string;
+  isOnline: boolean;       // what the backend actually sends
+  isActive: boolean;       // what the backend actually sends
+  lastSeenAt?: string | null;
+  offlineSince?: string | null;
+  protocol?: string | null;
+  areaTag?: string | null;
+  streamUrl?: string;      // frontend-only, added after stream resolve
 }
 
 export interface CameraStreamResponse {

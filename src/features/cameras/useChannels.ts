@@ -8,26 +8,13 @@ export const useChannels = (nvrId: string | null) => {
   return useQuery({
     queryKey: ['channels', nvrId],
     queryFn: async () => {
-      let data: Camera[] = [];
-      
       if (USE_MOCKDATA) {
         await new Promise((resolve) => setTimeout(resolve, 200));
-        data = nvrId ? (MOCK_CAMERAS[nvrId] || []) : [];
-      } else {
-        const response = await apiService.cameras.listByNvr(nvrId!);
-        data = response.data;
+        return nvrId ? (MOCK_CAMERAS[nvrId] || []) : [];
       }
 
-      
-      // Matrix requirement: always return 16 slots, fill gaps
-      const slots: (Camera | null)[] = new Array(16).fill(null);
-      data.forEach((cam) => {
-        if (cam.channel >= 1 && cam.channel <= 16) {
-          slots[cam.channel - 1] = cam;
-        }
-      });
-
-      return slots;
+      const response = await apiService.cameras.listByNvr(nvrId!);
+      return response.data; // backend already returns 16 slots
     },
     enabled: !!nvrId,
   });

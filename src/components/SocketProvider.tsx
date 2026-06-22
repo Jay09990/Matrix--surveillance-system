@@ -56,49 +56,42 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // 1. NVR Status Updates
     socket.on('nvr:status', (data: { nvrId: string; status: string; lastSeenAt?: string; offlineSince?: string }) => {
-      // Sync React Query cache
-      queryClient.setQueriesData<NVR[]>({ queryKey: ['nvrs'] }, (old) => {
-        if (!old) return old;
-        return old.map((nvr) => 
-          nvr.id === data.nvrId 
-            ? { ...nvr, status: data.status, lastSeenAt: data.lastSeenAt, offlineSince: data.offlineSince }
-            : nvr
-        );
-      });
+  // Backend emits ONLINE/OFFLINE (Prisma enum), frontend type expects lowercase
+  const normalizedStatus = data.status.toLowerCase() as NVR['status'];
 
-      // Sync Grid Store (New!)
-      updateNvrStatus(data.nvrId, data.status, data.lastSeenAt, data.offlineSince);
-    });
+  queryClient.setQueriesData<NVR[]>(
+    { queryKey: ['nvrs'], exact: false },
+    (old) => {
+      if (!old) return old;
+      return old.map((nvr) =>
+        nvr.id === data.nvrId
+          ? { ...nvr, status: normalizedStatus, lastSeenAt: data.lastSeenAt, offlineSince: data.offlineSince }
+          : nvr
+      );
+    }
+  );
 
-    // 2. Camera Status Updates
-    socket.on('camera:status', (data: { cameraId: string; nvrId: string; channel: number; isOnline: boolean; lastSeenAt?: string }) => {
-      const status = data.isOnline ? 'online' : 'offline';
-      
-      // Update the channel list query if it's currently loaded for this NVR
-      queryClient.setQueriesData<Camera[]>({ queryKey: ['channels', data.nvrId] }, (old) => {
-        if (!old) return old;
-        return old.map((cam) => 
-          cam.id === data.cameraId 
-            ? { ...cam, status, lastSeenAt: data.lastSeenAt || cam.lastSeenAt }
-            : cam
-        );
-      });
+  updateNvrStatus(data.nvrId, normalizedStatus, data.lastSeenAt, data.offlineSince);
+});
 
-      // Update the main NVR list (if nested cameras exist there)
-      queryClient.setQueriesData<NVR[]>({ queryKey: ['nvrs'] }, (old) => {
-        if (!old) return old;
-        return old.map((nvr) => {
-          if (nvr.id !== data.nvrId) return nvr;
-          return nvr;
-        });
-      });
-      
-      // Sync Grid Store (New!)
-      updateChannelStatus(data.cameraId, status, data.lastSeenAt);
+    // src/components/SocketProvider.tsx
 
-      // Invalidate station-specific lists to be sure
-      queryClient.invalidateQueries({ queryKey: ['nvrs', 'station'] });
-    });
+socket.on('camera:status', (data: { cameraId: string; nvrId: string; channel: number; isOnline: boolean; lastSeenAt?: string }) => {
+  queryClient.setQueriesData<(Camera | null)[]>(
+    { queryKey: ['channels', data.nvrId] },
+    (old) => {
+      if (!old) return old;
+      return old.map((cam) =>
+        cam?.id === data.cameraId
+          ? { ...cam, isOnline: data.isOnline, lastSeenAt: data.lastSeenAt ?? cam.lastSeenAt }
+          : cam
+      );
+    }
+  );
+
+  // GridStore updateChannelStatus also needs to use isOnline now
+  updateChannelStatus(data.cameraId, data.isOnline ? 'online' : 'offline', data.lastSeenAt);
+});
 
     // 3. New Camera Detection
     socket.on('camera:new', (data: { camera: Camera }) => {

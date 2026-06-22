@@ -1,65 +1,53 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/axios';
-import type { RecordingCamera } from '../../types/recording';
+import { apiService } from '../../services/api';
+import type { PlaybackCamera, PlaybackRecording } from '../../types/playback';
 
-export function useRecordingCameras() {
-  return useQuery<RecordingCamera[]>({
-    queryKey: ['recordings', 'cameras'],
+/**
+ * Playback data hooks backed by NVR storage and MediaMTX playback sessions.
+ */
+
+export function usePlaybackCameras() {
+  return useQuery<PlaybackCamera[]>({
+    queryKey: ['playback', 'cameras'],
     queryFn: async () => {
-      const res = await api.get('/recordings');
-      return res.data;
+      const { data: nvrs } = await apiService.nvrs.list();
+      const camerasByNvr = await Promise.all(
+        nvrs.map(async (nvr) => {
+          const { data: cameras } = await apiService.cameras.listByNvr(nvr.id);
+
+          return cameras.map((camera) => ({
+            cameraId: camera.id,
+            nvrId: camera.nvrId,
+            channel: camera.channel,
+            cameraName: camera.name,
+            isOnline: camera.isOnline,
+            nvr: {
+              id: nvr.id,
+              name: nvr.name,
+              ip: nvr.ip,
+              station: nvr.station,
+            },
+          }));
+        })
+      );
+
+      return camerasByNvr.flat();
     },
   });
 }
 
-export function useRecordings(
+export function usePlaybackRecordings(
   nvrId: string | null,
   channel: number | null,
-  dateRange?: { from: string; to: string }
+  date: string | null
 ) {
-  return useQuery({
-    queryKey: ['recordings', nvrId, channel, dateRange],
-    queryFn: async () => {
-      if (!nvrId || channel === null) return [];
-      const res = await api.get(`/recordings/${nvrId}/${channel}`, {
-        params: dateRange,
-      });
-      return res.data;
-    },
-    enabled: !!nvrId && channel !== null,
-  });
-}
-
-export function useStorageStats() {
-  return useQuery({
-    queryKey: ['recordings', 'stats'],
-    queryFn: async () => {
-      const res = await api.get('/recordings/stats');
-      return res.data;
-    },
-  });
-}
-
-export function useRecordingTimeline(nvrId: string | null, channel: number | null, date: string | null) {
-  return useQuery({
-    queryKey: ['recordings', 'timeline', nvrId, channel, date],
+  return useQuery<PlaybackRecording[]>({
+    queryKey: ['playback', 'recordings', nvrId, channel, date],
     enabled: !!nvrId && channel !== null && !!date,
     queryFn: async () => {
       if (!nvrId || channel === null || !date) return [];
-      const res = await api.get(`/recordings/${nvrId}/${channel}/timeline`, { params: { date } });
-      return res.data;
-    },
-  });
-}
-
-export function useRecordingDays(nvrId: string | null, channel: number | null) {
-  return useQuery({
-    queryKey: ['recordings', 'days', nvrId, channel],
-    enabled: !!nvrId && channel !== null,
-    queryFn: async () => {
-      if (!nvrId || channel === null) return { days: [] };
-      const res = await api.get(`/recordings/${nvrId}/${channel}/days`);
-      return res.data as { days: string[] };
+      const { data } = await apiService.playback.recordings(nvrId, channel, date);
+      return data;
     },
   });
 }

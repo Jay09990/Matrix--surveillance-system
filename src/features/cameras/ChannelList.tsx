@@ -53,16 +53,16 @@ interface DraggableChannelRowProps {
 
 const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
   const { activeChannels } = useGridStore();
-  const isInUse = channel && channel.id ? activeChannels.some(c => c?.id === channel.id) : false;
-
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: channel && channel.id ? `channel-${channel.id}` : `empty-${index}`,
-    data: channel ?? {},
-    disabled: !channel || !channel.id || channel.status === 'offline' || isInUse,
-  });
+  const isInUse = channel?.id ? activeChannels.some(c => c?.id === channel.id) : false;
 
   const isEmpty = !channel || !channel.id;
-  const isOffline = channel?.status === 'offline';
+  const isOffline = !isEmpty && !channel.isOnline;
+
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: channel?.id ? `channel-${channel.id}` : `empty-${index}`,
+    data: channel ?? {},
+    disabled: isEmpty || isOffline || isInUse,
+  });
 
   return (
     <div
@@ -81,12 +81,12 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
         {!isEmpty && !isOffline ? (
           <GripVertical className="w-3.5 h-3.5 mr-2 text-[#383838]" />
         ) : (
-          <div className="w-5.5" /> // spacer
+          <div className="w-5.5" />
         )}
         <span className="font-mono text-[10px] text-[#8d90a0] w-6 mr-1">
           {index.toString().padStart(2, '0')}
         </span>
-        
+
         {isEmpty ? (
           <span className="text-xs text-[#383838] font-bold uppercase tracking-wider ml-1">NO CAM</span>
         ) : (
@@ -94,12 +94,11 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
             <span className="text-sm text-[#e5e2e1] truncate max-w-[120px]">{channel.name}</span>
             <div className="flex items-center mt-0.5">
               <span className={`w-1.5 h-1.5 rounded-sm mr-1.5 ${
-                channel.status === 'online' ? 'bg-[#16a34a]' :
-                channel.status === 'warning' ? 'bg-[#f59e0b]' :
-                channel.status === 'offline' ? 'bg-[#e03e3e]' :
-                'bg-[#383838]'
+                channel.isOnline ? 'bg-[#16a34a]' : 'bg-[#e03e3e]'
               }`} />
-              <span className="text-[9px] font-mono text-[#8d90a0] uppercase">{channel.status || 'unknown'}</span>
+              <span className="text-[9px] font-mono text-[#8d90a0] uppercase">
+                {channel.isOnline ? 'online' : 'offline'}
+              </span>
               {isOffline && channel.lastSeenAt && (
                 <span className="text-[8px] font-mono text-[#8d90a0]/60 ml-2">
                   ({formatDistanceToNow(new Date(channel.lastSeenAt))} ago)
@@ -109,7 +108,7 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
           </div>
         )}
       </div>
-      
+
       {!isEmpty && (
         <div className="flex items-center gap-2">
           {isInUse && (
@@ -117,7 +116,7 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
               IN USE
             </span>
           )}
-          <Video className={`w-3.5 h-3.5 ${channel.status === 'online' ? 'text-[#16a34a]/70' : 'text-[#8d90a0]/50'}`} />
+          <Video className={`w-3.5 h-3.5 ${channel.isOnline ? 'text-[#16a34a]/70' : 'text-[#8d90a0]/50'}`} />
         </div>
       )}
     </div>

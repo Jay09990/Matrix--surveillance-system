@@ -1,11 +1,14 @@
 import { api } from '../lib/axios';
 import type { NVR } from '../types/nvr';
 import type { Camera } from '../types/camera';
+import type {
+  PlaybackRecording,
+  PlaybackResolveRequest,
+  PlaybackResolveResponse,
+} from '../types/playback';
 
 /**
- * Centralized API Service
- *
- * This file serves as the single source of truth for all backend interactions.
+ * Centralized API service for backend interactions.
  */
 
 export const apiService = {
@@ -28,8 +31,7 @@ export const apiService = {
     detection: {
       start: (nvrId: string) => api.post(`/nvrs/${nvrId}/detection/start`),
       stop: (nvrId: string) => api.post(`/nvrs/${nvrId}/detection/stop`),
-      active: () => api.get<{ isRunning: boolean, activeNvrIds: string[] }>('/detection/active'),
-
+      active: () => api.get<{ isRunning: boolean; activeNvrIds: string[] }>('/detection/active'),
     },
   },
 
@@ -43,34 +45,15 @@ export const apiService = {
       api.post('/streams/resolve', payload),
   },
 
-  // --- Recordings ---
-  recordings: {
-    listCameras: () => api.get<any[]>('/recordings'),
-    listByCamera: (nvrId: string, channel: number, params?: { from?: string; to?: string }) =>
-      api.get<any[]>(`/recordings/${nvrId}/${channel}`, { params }),
-    getStreamToken: (recordingId: string) => 
-      api.post<{ streamUrl: string }>(`/recordings/token/${recordingId}`),
-    stats: () => api.get<any>('/recordings/stats'),
-    export: (nvrId: string, channel: number, start: string, duration: number) =>
-      api.get(`/recordings/${nvrId}/${channel}/export`, {
-        params: { start, duration },
-        responseType: 'blob'
+  // --- NVR Playback ---
+  playback: {
+    resolve: (payload: PlaybackResolveRequest) =>
+      api.post<PlaybackResolveResponse>('/playback/resolve', payload),
+    stop: (pathName: string) =>
+      api.delete(`/playback/${encodeURIComponent(pathName)}`),
+    recordings: (nvrId: string, channel: number, date: string) =>
+      api.get<PlaybackRecording[]>(`/playback/recordings/${nvrId}/${channel}`, {
+        params: { date },
       }),
-
-    timeline: (nvrId: string, channel: number, date: string) =>
-      api.get<any[]>(`/recordings/${nvrId}/${channel}/timeline`, { params: { date } }),
-
-    days: (nvrId: string, channel: number) =>
-      api.get<{ days: string[] }>(`/recordings/${nvrId}/${channel}/days`),
-
-    seek: (nvrId: string, channel: number, timestamp: string) =>
-      api.get<{ id: string; offsetSeconds: number }>(`/recordings/${nvrId}/${channel}/seek`, { params: { timestamp } }),
-
-    getFile: (recordingId: string) =>
-      api.get<any>(`/recordings/file/${recordingId}`),
-
-    deleteFile: (recordingId: string) =>
-      api.delete(`/recordings/file/${recordingId}`),
   },
-
 };
