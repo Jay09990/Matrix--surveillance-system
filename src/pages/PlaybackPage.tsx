@@ -18,7 +18,7 @@ import {
 import { Topbar } from '../components/Topbar';
 import { SectionLabel } from '../components/SectionLabel';
 import { Button } from '../components/ui/button';
-import { PlaybackWhepPlayer } from '../features/recordings/AuthenticatedVideo';
+import { PlaybackHlsPlayer } from '../features/recordings/PlaybackHlsPlayer';
 import { usePlaybackCameras, usePlaybackRecordings } from '../features/recordings/useRecordings';
 import { apiService } from '../services/api';
 import type { PlaybackCamera, PlaybackRecording } from '../types/playback';
@@ -31,7 +31,18 @@ interface SelectedPlaybackCamera {
 
 interface ActivePlaybackSession {
   whepUrl: string;
+  hlsUrl: string;
   pathName: string;
+  durationSeconds: number;
+  /** ISO 8601 UTC — absolute wall-clock start of this session (from resolve) */
+  sessionStartTime: string;
+  /** ISO 8601 UTC — absolute wall-clock end of this session (from resolve) */
+  sessionEndTime: string;
+  /** Duplicated here so seek doesn't need to pull from selectedCamera */
+  nvrId: string;
+  channel: number;
+  /** HiFocus timezone offset in ms; 0 for Hikvision */
+  tzOffsetMs: number;
 }
 
 const DEFAULT_SEEK_WINDOW_MINUTES = 5;
@@ -48,8 +59,8 @@ export default function PlaybackPage() {
   const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [seekTime, setSeekTime] = useState<string>('');
   const [seekError, setSeekError] = useState<string | null>(null);
-  const [customTime, setCustomTime] = useState<string>('12:00');
-  const [customDuration, setCustomDuration] = useState<number>(30);
+  const [customStartTime, setCustomStartTime] = useState<string>('12:00');
+  const [customEndTime, setCustomEndTime] = useState<string>('12:30');
   const [isResolving, setIsResolving] = useState(false);
   const [activeSession, setActiveSession] = useState<ActivePlaybackSession | null>(null);
 
@@ -86,10 +97,10 @@ export default function PlaybackPage() {
       }
 
       stations[stationId].nvrs[nvrId].cameras.push(camera);
+
       return stations;
     }, {});
   }, [cameras]);
-
   useEffect(() => {
     return () => {
       void stopActivePlayback();
@@ -107,7 +118,6 @@ export default function PlaybackPage() {
       console.error('[PlaybackPage] Failed to stop playback path:', error);
     }
   }
-
   async function startPlayback(startTime: string, endTime: string, recordingKey: string) {
     if (!selectedCamera) return;
 
@@ -124,8 +134,16 @@ export default function PlaybackPage() {
       });
 
       activePathRef.current = data.pathName;
-      setActiveSession(data);
+      setActiveSession({
+        ...data,
+        sessionStartTime: startTime,
+        sessionEndTime: endTime,
+        nvrId: selectedCamera.nvrId,
+        channel: selectedCamera.channel,
+        tzOffsetMs: data.tzOffsetMs ?? 0,
+      });
       setSelectedRecordingKey(recordingKey);
+
     } catch (error) {
       console.error('[PlaybackPage] Failed to resolve playback:', error);
       setSeekError('Failed to start playback for this range');
@@ -161,12 +179,72 @@ export default function PlaybackPage() {
     await startPlayback(startTime, endTime, `seek-${startTime}`);
   }
 
+  async function handlePlayerSeek(offsetSeconds: number) {
+    if (!activeSession || !selectedRecordingKey) return;
+
+    // Clamp to the session's valid time window
+    const clampedOffset = Math.max(0, Math.min(offsetSeconds, activeSession.durationSeconds));
+
+    // Compute absolute ISO timestamps for the new segment
+    const newStartTime = new Date(
+      new Date(activeSession.sessionStartTime).getTime() + clampedOffset * 1000
+    ).toISOString();
+    // Keep the same end boundary as the original session
+    const newEndTime = activeSession.sessionEndTime;
+
+    setIsResolving(true);
+    setSeekError(null);
+
+    try {
+      // POST /api/playback/seek — backend tears down oldPathName and provisions
+      // a new MediaMTX path starting at newStartTime.
+      const { data } = await apiService.playback.seek({
+        nvrId: activeSession.nvrId,
+        channel: activeSession.channel,
+        startTime: newStartTime,
+        endTime: newEndTime,
+        oldPathName: activeSession.pathName,
+        tzOffsetMs: activeSession.tzOffsetMs,
+      });
+
+      // Update activePathRef so cleanup on unmount kills the new path
+      activePathRef.current = data.pathName;
+
+      // Replace session with fresh data from seek response
+      setActiveSession({
+        ...data,
+        sessionStartTime: newStartTime,
+        sessionEndTime: newEndTime,
+        nvrId: activeSession.nvrId,
+        channel: activeSession.channel,
+        tzOffsetMs: data.tzOffsetMs ?? activeSession.tzOffsetMs,
+      });
+    } catch (error) {
+      console.error('[PlaybackPage] Seek API failed:', error);
+      setSeekError('Seek failed — try clicking a timestamp directly');
+    } finally {
+      setIsResolving(false);
+    }
+  }
+
   async function handleRangePlayback() {
     if (!selectedCamera) return;
 
-    const startTime = `${selectedDate}T${customTime}:00Z`;
-    const endTime = addMinutes(startTime, customDuration);
-    await startPlayback(startTime, endTime, `range-${startTime}-${customDuration}`);
+    const startTime = `${selectedDate}T${customStartTime}:00Z`;
+    const endTime = `${selectedDate}T${customEndTime}:00Z`;
+    await startPlayback(startTime, endTime, `range-${startTime}-${customEndTime}`);
+  }
+
+  function handleRecordingClick(recording: PlaybackRecording, recordingKey: string) {
+    const endTime = getRecordingEndTime(recording);
+    if (!endTime) return;
+
+    const start = new Date(recording.startTime);
+    const end = new Date(endTime);
+    
+    setCustomStartTime(`${start.getUTCHours().toString().padStart(2, '0')}:${start.getUTCMinutes().toString().padStart(2, '0')}`);
+    setCustomEndTime(`${end.getUTCHours().toString().padStart(2, '0')}:${end.getUTCMinutes().toString().padStart(2, '0')}`);
+    setSelectedRecordingKey(recordingKey);
   }
 
   const toggleStation = (id: string) => {
@@ -246,11 +324,10 @@ export default function PlaybackPage() {
                                   <button
                                     key={`${camera.nvrId}-${camera.channel}`}
                                     onClick={() => void handleCameraSelect(camera)}
-                                    className={`w-full flex items-center gap-3 p-2 rounded-sm transition-all group ${
-                                      isSelected
-                                        ? 'bg-[#2563eb]/20 border border-[#2563eb]/40'
-                                        : 'hover:bg-[#1e1e1e] border border-transparent'
-                                    }`}
+                                    className={`w-full flex items-center gap-3 p-2 rounded-sm transition-all group ${isSelected
+                                      ? 'bg-[#2563eb]/20 border border-[#2563eb]/40'
+                                      : 'hover:bg-[#1e1e1e] border border-transparent'
+                                      }`}
                                   >
                                     <Video className={`w-3.5 h-3.5 ${isSelected ? 'text-[#2563eb]' : 'text-[#8d90a0]'}`} />
                                     <div className="flex flex-col items-start overflow-hidden text-left">
@@ -274,7 +351,7 @@ export default function PlaybackPage() {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col bg-[#0d0d0d] relative">
+        <div className="flex-1 min-w-0 flex flex-col bg-[#0d0d0d] relative">
           {!selectedCamera ? (
             <div className="flex-1 flex flex-col items-center justify-center">
               <Film className="w-12 h-12 text-[#3a3a3a] mb-4" />
@@ -315,18 +392,22 @@ export default function PlaybackPage() {
                 </div>
               </div>
 
-              <div className="flex-1 min-h-0 bg-black flex items-center justify-center relative group">
+              <div className="flex-1 min-h-0 h-0 bg-black flex items-center justify-center relative group">
                 {isResolving ? (
                   <div className="flex flex-col items-center justify-center gap-3 text-[#2563eb]">
                     <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#2563eb]" />
                     <span className="text-xs font-bold uppercase tracking-widest text-[#8d90a0]">Resolving playback...</span>
                   </div>
                 ) : activeSession ? (
-                  <PlaybackWhepPlayer
-                    key={activeSession.pathName}
-                    whepUrl={activeSession.whepUrl}
-                    className="max-h-full max-w-full bg-black"
-                  />
+                  <div className="w-full h-full flex items-center justify-center">
+                    <PlaybackHlsPlayer
+                      key={activeSession.pathName}
+                      hlsUrl={activeSession.hlsUrl}
+                      durationSeconds={activeSession.durationSeconds}
+                      onSeekRequest={(offset) => void handlePlayerSeek(offset)}
+                      className="w-full h-full object-contain bg-black"
+                    />
+                  </div>
                 ) : (
                   <div className="text-center">
                     <Play className="w-12 h-12 text-[#2563eb] mb-4 mx-auto" />
@@ -365,14 +446,11 @@ export default function PlaybackPage() {
 
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-[#8d90a0] uppercase">Playback Range:</span>
-                    <input type="time" value={customTime} onChange={(event) => setCustomTime(event.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-sm px-2 py-1 text-white text-xs font-mono outline-none [color-scheme:dark]" />
-                    <select value={customDuration} onChange={(event) => setCustomDuration(Number(event.target.value))} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-sm px-2 py-1 text-white text-xs font-mono outline-none">
-                      <option value={5}>5m</option>
-                      <option value={15}>15m</option>
-                      <option value={30}>30m</option>
-                    </select>
+                    <input type="time" value={customStartTime} onChange={(event) => setCustomStartTime(event.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-sm px-2 py-1 text-white text-xs font-mono outline-none [color-scheme:dark]" />
+                    <span className="text-[10px] font-bold text-[#8d90a0] uppercase">to</span>
+                    <input type="time" value={customEndTime} onChange={(event) => setCustomEndTime(event.target.value)} className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-sm px-2 py-1 text-white text-xs font-mono outline-none [color-scheme:dark]" />
                     <Button onClick={() => void handleRangePlayback()} disabled={isResolving} size="sm" className="bg-[#2563eb] h-7 text-[10px] uppercase font-bold">
-                      Play
+                      Play Range
                     </Button>
                   </div>
                 </div>
@@ -405,7 +483,7 @@ export default function PlaybackPage() {
                     return (
                       <button
                         key={recordingKey}
-                        onClick={() => void startPlayback(recording.startTime, endTime, recordingKey)}
+                        onClick={() => handleRecordingClick(recording, recordingKey)}
                         className="absolute top-0 h-full bg-[#2563eb]/40 border-x border-[#2563eb]/20 hover:bg-[#2563eb] transition-colors z-10"
                         style={{ left: `${left}%`, width: `${Math.max(width, 0.2)}%` }}
                         title={`${format(start, 'HH:mm:ss')} - ${format(end, 'HH:mm:ss')}`}
@@ -414,7 +492,7 @@ export default function PlaybackPage() {
                   })}
                 </div>
 
-                <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+                <div className="flex gap-4 overflow-x-auto  pb-2">
                   {isLoadingRecordings ? (
                     <div className="animate-pulse flex gap-4">
                       {[1, 2, 3].map((index) => <div key={index} className="w-56 h-32 bg-[#1a1a1a] rounded-sm" />)}
@@ -433,12 +511,11 @@ export default function PlaybackPage() {
                         <button
                           key={recordingKey}
                           disabled={!endTime || isResolving}
-                          onClick={() => endTime && void startPlayback(recording.startTime, endTime, recordingKey)}
-                          className={`w-56 shrink-0 flex flex-col rounded-sm border transition-all overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed ${
-                            isSelected
-                              ? 'bg-[#2563eb]/10 border-[#2563eb]'
-                              : 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#3a3a3a]'
-                          }`}
+                          onClick={() => handleRecordingClick(recording, recordingKey)}
+                          className={`w-56 shrink-0 flex flex-col rounded-sm border transition-all overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed ${isSelected
+                            ? 'bg-[#2563eb]/10 border-[#2563eb]'
+                            : 'bg-[#1a1a1a] border-[#2a2a2a] hover:border-[#3a3a3a]'
+                            }`}
                         >
                           <div className="aspect-video bg-black flex items-center justify-center relative">
                             <Film className="w-8 h-8 text-[#1a1a1a]" />

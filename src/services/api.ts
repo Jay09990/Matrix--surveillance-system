@@ -5,6 +5,8 @@ import type {
   PlaybackRecording,
   PlaybackResolveRequest,
   PlaybackResolveResponse,
+  PlaybackSeekRequest,
+  PlaybackSeekResponse,
 } from '../types/playback';
 
 /**
@@ -55,5 +57,8 @@ export const apiService = {
       api.get<PlaybackRecording[]>(`/playback/recordings/${nvrId}/${channel}`, {
         params: { date },
       }),
+    // POST /api/playback/seek — reposition an existing HLS session
+    seek: (payload: PlaybackSeekRequest) =>
+      api.post<PlaybackSeekResponse>('/playback/seek', payload),
   },
 };

@@ -11,7 +11,11 @@ export interface PlaybackResolveRequest {
 
 export interface PlaybackResolveResponse {
   whepUrl: string;
+  hlsUrl: string;
   pathName: string;
+  durationSeconds: number;
+  /** HiFocus only — NVR local timezone offset in ms. Required by seek. */
+  tzOffsetMs?: number;
 }
 
 export interface PlaybackRecording {
@@ -22,6 +26,32 @@ export interface PlaybackRecording {
   endTime: string | null;
   durationSeconds?: number | null;
   sizeBytes?: string | number | null;
+}
+
+/**
+ * POST /api/playback/seek
+ * Stops the old MediaMTX path and provisions a new one from the seek position.
+ * All fields must match the backend seekSchema exactly.
+ */
+export interface PlaybackSeekRequest {
+  nvrId: string;
+  channel: number;
+  /** ISO 8601 UTC — absolute start of the new segment */
+  startTime: string;
+  /** ISO 8601 UTC — end of the original session (unchanged) */
+  endTime: string;
+  /** pathName of the currently active session — backend tears this down */
+  oldPathName: string;
+  /** HiFocus timezone offset in ms from resolvePlayback; 0 for Hikvision */
+  tzOffsetMs: number;
+}
+
+export interface PlaybackSeekResponse {
+  whepUrl: string;
+  hlsUrl: string;
+  pathName: string;
+  durationSeconds: number;
+  tzOffsetMs?: number;
 }
 
 export interface PlaybackCamera {
