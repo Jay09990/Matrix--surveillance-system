@@ -199,12 +199,17 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
             {ticks.map((tick, i) => (
               <div 
                 key={i} 
-                className="absolute top-0 flex flex-col items-center"
-                style={{ left: `${tick.percent}%`, transform: 'translateX(-50%)' }}
+                className="absolute top-0 h-full"
+                style={{ left: `${tick.percent}%` }}
               >
-                <div className={`w-px bg-[#3a3a3a] ${tick.type === 'hour' ? 'h-3' : tick.type === 'half' ? 'h-2' : 'h-1'}`} />
+                <div className={`absolute top-0 left-0 w-px bg-[#3a3a3a] -translate-x-1/2 ${tick.type === 'hour' ? 'h-3' : tick.type === 'half' ? 'h-2' : 'h-1'}`} />
                 {tick.label && (
-                  <span className="text-[9px] font-mono text-[#8d90a0] mt-0.5 leading-none bg-[#0a0a0a] px-0.5 z-10">
+                  <span 
+                    className="absolute top-3 text-[9px] font-mono text-[#8d90a0] mt-0.5 leading-none bg-[#0a0a0a] px-0.5 z-10 whitespace-nowrap"
+                    style={{
+                      transform: tick.percent === 0 ? 'translateX(0)' : tick.percent >= 99.9 ? 'translateX(-100%)' : 'translateX(-50%)'
+                    }}
+                  >
                     {tick.label}
                   </span>
                 )}
