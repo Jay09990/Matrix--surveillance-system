@@ -1,6 +1,17 @@
+/** HLS recording playback with full-window seeking and frontend transport controls. */
 import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
-import { SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import {
+  FastForward,
+  Maximize,
+  Pause,
+  Play,
+  Rewind,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 
 interface PlaybackHlsPlayerProps {
   hlsUrl: string;
@@ -8,45 +19,51 @@ interface PlaybackHlsPlayerProps {
   /**
    * Absolute, IMMUTABLE start/end of the recording being played (ms epoch).
    * This is the anchor for the seekbar — it must NOT change when the
-   * underlying HLS session is re-resolved after a seek. Only the visible
-   * *session* window (what's actually being streamed right now) shrinks/shifts.
+   * underlying HLS session is re-resolved after a seek.
    */
   recordingStartMs: number;
   recordingEndMs: number;
 
   /**
    * Absolute start/end of the CURRENT streaming session (ms epoch).
-   * This is whatever sub-range the backend just resolved (e.g. after a seek,
-   * sessionStartMs moves forward but recordingStartMs never does).
+   * Shifts on every seek-triggered backend re-resolve.
    */
   sessionStartMs: number;
   sessionEndMs: number;
 
-  /**
-   * Called with an ABSOLUTE epoch ms timestamp the user wants to jump to.
-   * The parent is responsible for deciding whether this is within the
-   * current session's local buffer or requires a new backend resolve.
-   */
+  /** Called with an ABSOLUTE epoch ms timestamp the user wants to jump to. */
   onSeekToAbsolute: (absoluteMs: number) => void;
 
-  /**
-   * True while the backend is resolving a new session (e.g. during a seek).
-   * Used to freeze the current frame and show a loading spinner.
-   */
+  /** True while the backend is resolving a seek — shows freeze frame + spinner. */
   isResolving?: boolean;
 
-  /** Emits the current absolute playback time (epoch ms) */
+  /** Emits the current absolute playback time (epoch ms) on every timeupdate. */
   onTimeUpdate?: (absoluteMs: number) => void;
+
+  /**
+   * Controlled playback speed from the parent.
+   * Parent holds this in state so it survives seeks (which remount HLS).
+   */
+  playbackSpeed: number;
+  onPlaybackSpeedChange: (speed: number) => void;
 
   className?: string;
 }
 
-const SKIP_SECONDS = 10;
+// Speed is always multiplied/divided by 2, clamped to [0.25, 8]
+const MIN_SPEED = 0.25;
+const MAX_SPEED = 8;
 
 function formatClockTime(ms: number) {
   if (!Number.isFinite(ms)) return '--:--:--';
-  const d = new Date(ms);
-  return d.toLocaleTimeString('en-GB', { hour12: false });
+  return new Date(ms).toLocaleTimeString('en-GB', { hour12: false });
+}
+
+function formatSpeed(speed: number): string {
+  // Show clean fractions for sub-1x, integers for 1x and above
+  if (speed === 0.25) return '0.25×';
+  if (speed === 0.5) return '0.5×';
+  return `${speed}×`;
 }
 
 export function PlaybackHlsPlayer({
@@ -58,15 +75,19 @@ export function PlaybackHlsPlayer({
   onSeekToAbsolute,
   isResolving,
   onTimeUpdate,
+  playbackSpeed,
+  onPlaybackSpeedChange,
   className,
 }: PlaybackHlsPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+
+  // Ref keeps speed accessible inside async HLS callbacks without stale closure issues
+  const playbackSpeedRef = useRef(playbackSpeed);
+
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  
-  // Persist playback states across seeks
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0); // seconds, relative to sessionStartMs
   const [buffered, setBuffered] = useState<TimeRanges | null>(null);
@@ -75,10 +96,9 @@ export function PlaybackHlsPlayer({
 
   const recordingDurationSeconds = Math.max(0, (recordingEndMs - recordingStartMs) / 1000);
   const sessionDurationSeconds = Math.max(0, (sessionEndMs - sessionStartMs) / 1000);
-  // Where this session sits within the overall recording timeline (seconds)
   const sessionOffsetIntoRecording = Math.max(0, (sessionStartMs - recordingStartMs) / 1000);
 
-  // Freeze frame immediately when a seek starts
+  // ── Freeze frame on seek start ────────────────────────────────────────────
   useEffect(() => {
     if (isResolving) {
       setIsBuffering(true);
@@ -93,6 +113,13 @@ export function PlaybackHlsPlayer({
     }
   }, [isResolving]);
 
+  // ── Sync controlled speed to video immediately whenever prop changes ──────
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+    if (videoRef.current) videoRef.current.playbackRate = playbackSpeed;
+  }, [playbackSpeed]);
+
+  // ── HLS initialisation — reruns only when hlsUrl changes (new session) ────
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !hlsUrl) return;
@@ -109,10 +136,9 @@ export function PlaybackHlsPlayer({
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onTimeUpdateEvent = () => {
+      const absoluteMs = sessionStartMs + video.currentTime * 1000;
       setCurrentTime(video.currentTime);
-      if (onTimeUpdate) {
-        onTimeUpdate(sessionStartMs + video.currentTime * 1000);
-      }
+      onTimeUpdate?.(absoluteMs);
     };
     const onProgress = () => setBuffered(video.buffered);
     const onVolumeChange = () => setIsMuted(video.muted);
@@ -123,8 +149,9 @@ export function PlaybackHlsPlayer({
     video.addEventListener('progress', onProgress);
     video.addEventListener('volumechange', onVolumeChange);
 
-    // Sync current state to video initially
+    // Restore preferences before the new stream starts
     video.muted = isMuted;
+    video.playbackRate = playbackSpeedRef.current;
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -138,7 +165,6 @@ export function PlaybackHlsPlayer({
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
-          console.error('[PlaybackHlsPlayer] Fatal HLS error:', data);
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
               setErrorMsg('Network error loading recording stream');
@@ -150,16 +176,16 @@ export function PlaybackHlsPlayer({
             default:
               setErrorMsg(`HLS error: ${data.details}`);
               hls.destroy();
-              break;
           }
         }
       });
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsBuffering(false);
+        // Re-apply speed after manifest load — hls.js resets playbackRate on attach
+        video.playbackRate = playbackSpeedRef.current;
         if (isPlaying) {
           video.play().catch(err => {
-            console.error('[PlaybackHlsPlayer] play() failed:', err);
             setErrorMsg('Playback failed: ' + err.message);
           });
         }
@@ -171,17 +197,13 @@ export function PlaybackHlsPlayer({
       video.src = hlsUrl;
       video.addEventListener('loadedmetadata', () => {
         setIsBuffering(false);
+        video.playbackRate = playbackSpeedRef.current;
         if (isPlaying) {
-          video.play().catch(err => {
-            console.error('[PlaybackHlsPlayer] Native HLS play() failed:', err);
-            setErrorMsg('Playback failed: ' + err.message);
-          });
+          video.play().catch(err => setErrorMsg('Playback failed: ' + err.message));
         }
       });
       video.addEventListener('error', () => {
-        const code = video.error?.code;
-        console.error('[PlaybackHlsPlayer] Native HLS video error', code);
-        setErrorMsg(`Failed to load recording (code ${code})`);
+        setErrorMsg(`Failed to load recording (code ${video.error?.code})`);
       });
     } else {
       setErrorMsg('HLS playback is not supported in this browser.');
@@ -193,56 +215,39 @@ export function PlaybackHlsPlayer({
       video.removeEventListener('timeupdate', onTimeUpdateEvent);
       video.removeEventListener('progress', onProgress);
       video.removeEventListener('volumechange', onVolumeChange);
-
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      // Note: we do NOT clear video.src here so we don't flash a black frame
-      // if the canvas didn't capture properly. hls.js will overwrite it anyway.
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+      // Don't clear video.src — avoids black flash before canvas captures
     };
-    // Re-init only when the actual stream URL changes (i.e. a new session was resolved)
-    // We intentionally omit `isPlaying` and `isMuted` so they don't retrigger this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hlsUrl]);
 
-  /**
-   * Converts a target ABSOLUTE recording-relative offset (seconds since
-   * recordingStartMs) into either a local video.currentTime seek (if it
-   * falls within the currently buffered range of THIS session) or a
-   * request to resolve a brand new session anchored at that absolute time.
-   */
+  // ── Seek logic (unchanged from before) ───────────────────────────────────
   function seekToRecordingOffset(targetRecordingOffsetSeconds: number) {
     const video = videoRef.current;
     if (!video) return;
 
     const clamped = Math.max(0, Math.min(targetRecordingOffsetSeconds, recordingDurationSeconds));
-
-    // Translate into "seconds within the current session" to check local buffer.
     const targetSessionOffset = clamped - sessionOffsetIntoRecording;
 
-    let isBuffered = false;
+    let isInBuffer = false;
     if (buffered && targetSessionOffset >= 0 && targetSessionOffset <= sessionDurationSeconds) {
       for (let i = 0; i < buffered.length; i++) {
         if (targetSessionOffset >= buffered.start(i) && targetSessionOffset <= buffered.end(i)) {
-          isBuffered = true;
+          isInBuffer = true;
           break;
         }
       }
     }
 
-    if (isBuffered) {
+    if (isInBuffer) {
       video.currentTime = targetSessionOffset;
     } else {
-      // Out of this session's range entirely (forward OR backward) — ask
-      // parent to resolve a fresh session anchored at the ABSOLUTE time.
-      const absoluteMs = recordingStartMs + clamped * 1000;
-      onSeekToAbsolute(absoluteMs);
+      onSeekToAbsolute(recordingStartMs + clamped * 1000);
     }
   }
 
   function skip(seconds: number) {
-    // currentTime is relative to the session; convert to recording-absolute first.
     const currentRecordingOffset = sessionOffsetIntoRecording + currentTime;
     seekToRecordingOffset(currentRecordingOffset + seconds);
   }
@@ -251,15 +256,37 @@ export function PlaybackHlsPlayer({
     if (recordingDurationSeconds <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const targetRecordingOffset = ratio * recordingDurationSeconds;
-    seekToRecordingOffset(targetRecordingOffset);
+    seekToRecordingOffset(ratio * recordingDurationSeconds);
   }
 
+  // ── Transport controls ────────────────────────────────────────────────────
   function togglePlay() {
     const video = videoRef.current;
     if (!video) return;
     if (isPlaying) video.pause();
-    else video.play();
+    else void video.play();
+  }
+
+  /**
+   * Speed Down: divide current speed by 2, clamp at MIN_SPEED (0.25×).
+   * Always operates on the CURRENT speed, never resets to 1×.
+   */
+  function speedDown() {
+    const next = Math.max(MIN_SPEED, playbackSpeed / 2);
+    if (next === playbackSpeed) return;
+    if (videoRef.current) videoRef.current.playbackRate = next;
+    onPlaybackSpeedChange(next);
+  }
+
+  /**
+   * Speed Up: multiply current speed by 2, clamp at MAX_SPEED (8×).
+   * Always operates on the CURRENT speed, never resets to 1×.
+   */
+  function speedUp() {
+    const next = Math.min(MAX_SPEED, playbackSpeed * 2);
+    if (next === playbackSpeed) return;
+    if (videoRef.current) videoRef.current.playbackRate = next;
+    onPlaybackSpeedChange(next);
   }
 
   function toggleMute() {
@@ -272,23 +299,22 @@ export function PlaybackHlsPlayer({
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
       containerRef.current.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+        console.error('Fullscreen error:', err.message);
       });
     } else {
       document.exitFullscreen();
     }
   }
 
-  // Buffered segments are rendered against the FULL recording timeline,
-  // offset by where this session sits within it.
-  const renderBufferedSegments = () => {
+  // ── Buffered segment rendering ────────────────────────────────────────────
+  function renderBufferedSegments() {
     if (!buffered || recordingDurationSeconds <= 0) return null;
     const segments = [];
     for (let i = 0; i < buffered.length; i++) {
-      const startInRecording = sessionOffsetIntoRecording + buffered.start(i);
-      const endInRecording = sessionOffsetIntoRecording + buffered.end(i);
-      const left = (startInRecording / recordingDurationSeconds) * 100;
-      const width = ((endInRecording - startInRecording) / recordingDurationSeconds) * 100;
+      const startInRec = sessionOffsetIntoRecording + buffered.start(i);
+      const endInRec = sessionOffsetIntoRecording + buffered.end(i);
+      const left = (startInRec / recordingDurationSeconds) * 100;
+      const width = ((endInRec - startInRec) / recordingDurationSeconds) * 100;
       segments.push(
         <div
           key={i}
@@ -298,12 +324,19 @@ export function PlaybackHlsPlayer({
       );
     }
     return segments;
-  };
+  }
 
-  // Progress dot position is also relative to the FULL recording timeline.
   const absoluteCurrentOffset = sessionOffsetIntoRecording + currentTime;
   const currentProgress =
-    recordingDurationSeconds > 0 ? (absoluteCurrentOffset / recordingDurationSeconds) * 100 : 0;
+    recordingDurationSeconds > 0
+      ? Math.min(100, Math.max(0, (absoluteCurrentOffset / recordingDurationSeconds) * 100))
+      : 0;
+
+  // ── What speed will change TO on next click (shown as button label) ───────
+  const nextSpeedUp = Math.min(MAX_SPEED, playbackSpeed * 2);
+  const nextSpeedDown = Math.max(MIN_SPEED, playbackSpeed / 2);
+  const canSpeedUp = playbackSpeed < MAX_SPEED;
+  const canSpeedDown = playbackSpeed > MIN_SPEED;
 
   if (errorMsg || !hlsUrl) {
     return (
@@ -316,7 +349,11 @@ export function PlaybackHlsPlayer({
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-full flex flex-col items-center justify-center bg-black group/player overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative w-full h-full flex flex-col items-center justify-center bg-black group/player overflow-hidden"
+    >
+      {/* Video element */}
       <video
         ref={videoRef}
         playsInline
@@ -324,73 +361,169 @@ export function PlaybackHlsPlayer({
         style={{ opacity: isBuffering ? 0 : 1 }}
       />
 
+      {/* Freeze-frame canvas — shown while backend resolves a seek */}
       <canvas
         ref={canvasRef}
-        className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity ${isBuffering ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity ${
+          isBuffering ? 'opacity-100' : 'opacity-0'
+        }`}
       />
 
+      {/* Buffering spinner */}
       {isBuffering && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 z-30 pointer-events-none">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-t-2 border-[#2563eb]" />
         </div>
       )}
 
-      {/* Skip overlay buttons — visible on hover */}
-      <div className="absolute inset-x-0 top-0 bottom-16 flex items-center justify-between px-6 pointer-events-none opacity-0 group-hover/player:opacity-100 transition-opacity z-10">
-        <button
-          onClick={() => skip(-SKIP_SECONDS)}
-          className="pointer-events-auto flex flex-col items-center gap-1 bg-black/60 hover:bg-black/80 border border-white/10 rounded-sm px-4 py-3 text-white transition-all"
-        >
-          <SkipBack className="w-5 h-5 text-[#2563eb]" />
-          <span className="text-[9px] font-bold font-mono uppercase tracking-widest">-{SKIP_SECONDS}s</span>
-        </button>
+      {/* Speed badge — top-right corner, visible only when not at 1× */}
+      {playbackSpeed !== 1 && (
+        <div className="pointer-events-none absolute right-4 top-4 z-20">
+          <span className="rounded-sm border border-[#f59e0b]/50 bg-[#f59e0b]/15 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-[#f59e0b]">
+            {formatSpeed(playbackSpeed)} {playbackSpeed > 1 ? 'FF' : 'SLO'}
+          </span>
+        </div>
+      )}
 
-        <button
-          onClick={() => skip(SKIP_SECONDS)}
-          className="pointer-events-auto flex flex-col items-center gap-1 bg-black/60 hover:bg-black/80 border border-white/10 rounded-sm px-4 py-3 text-white transition-all"
-        >
-          <SkipForward className="w-5 h-5 text-[#2563eb]" />
-          <span className="text-[9px] font-bold font-mono uppercase tracking-widest">+{SKIP_SECONDS}s</span>
-        </button>
-      </div>
+      {/* ── Skip 10s overlays — centered vertically on the frame ─────────── */}
+      <button
+        type="button"
+        onClick={() => skip(-10)}
+        className="absolute left-4 top-1/2 -translate-y-1/2 z-20
+                   flex flex-col items-center gap-1
+                   opacity-0 group-hover/player:opacity-100 transition-opacity
+                   bg-black/50 hover:bg-black/75 border border-white/10
+                   rounded-sm px-3 py-2 text-white"
+        aria-label="Skip back 10 seconds"
+      >
+        <SkipBack className="w-5 h-5 text-[#2563eb]" />
+        <span className="font-mono text-[9px] font-bold uppercase tracking-widest">-10s</span>
+      </button>
 
-      {/* Custom Controls Bar */}
-      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent pt-10 pb-4 px-4 flex flex-col gap-2 opacity-0 group-hover/player:opacity-100 transition-opacity z-20">
-        {/* Seekbar — scaled against the FULL recording, not the current session */}
+      <button
+        type="button"
+        onClick={() => skip(10)}
+        className="absolute right-4 top-1/2 -translate-y-1/2 z-20
+                   flex flex-col items-center gap-1
+                   opacity-0 group-hover/player:opacity-100 transition-opacity
+                   bg-black/50 hover:bg-black/75 border border-white/10
+                   rounded-sm px-3 py-2 text-white"
+        aria-label="Skip forward 10 seconds"
+      >
+        <SkipForward className="w-5 h-5 text-[#2563eb]" />
+        <span className="font-mono text-[9px] font-bold uppercase tracking-widest">+10s</span>
+      </button>
+
+      {/* ── Bottom controls bar — appears on hover ───────────────────────── */}
+      <div
+        className="absolute inset-x-0 bottom-0 z-40
+                   flex flex-col gap-2
+                   bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/90 to-transparent
+                   px-4 pb-3 pt-10
+                   opacity-0 transition-opacity
+                   group-hover/player:opacity-100 focus-within:opacity-100"
+      >
+        {/* Row 1: Seekbar — always scaled against full recording window */}
         <div
-          className="relative h-1.5 w-full bg-white/20 cursor-pointer rounded-full overflow-hidden group/seekbar"
+          className="group/seekbar relative h-1.5 w-full cursor-pointer overflow-hidden rounded-full bg-white/20"
           onClick={handleSeekbarClick}
         >
-          {/* Buffered Segments */}
           {renderBufferedSegments()}
-
-          {/* Current Progress */}
           <div
-            className="absolute top-0 bottom-0 bg-[#2563eb] group-hover/seekbar:bg-[#3b82f6] transition-colors"
-            style={{ width: `${Math.min(Math.max(currentProgress, 0), 100)}%` }}
+            className="absolute inset-y-0 bg-[#2563eb] transition-colors group-hover/seekbar:bg-[#3b82f6]"
+            style={{ width: `${currentProgress}%` }}
           />
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center justify-between mt-2">
-          <div className="flex items-center gap-4">
-            <button onClick={togglePlay} className="text-white hover:text-[#2563eb] transition-colors">
-              {isPlaying ? <Pause className="w-5 h-5" fill="currentColor" /> : <Play className="w-5 h-5" fill="currentColor" />}
-            </button>
-            <div className="flex items-center gap-2">
-              <button onClick={toggleMute} className="text-white hover:text-[#2563eb] transition-colors">
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
-            </div>
-            {/* Show absolute wall-clock time, not relative offsets — much clearer for a recording */}
-            <span className="text-xs font-mono text-white/80">
-              {formatClockTime(recordingStartMs + absoluteCurrentOffset * 1000)} / {formatClockTime(recordingEndMs)}
-            </span>
-          </div>
+        {/* Row 2: Transport controls */}
+        <div className="flex items-center">
 
-          <button onClick={toggleFullscreen} className="text-white hover:text-[#2563eb] transition-colors">
-            <Maximize className="w-4 h-4" />
+          {/* LEFT: Speed Down button — divides current speed by 2 */}
+          <button
+            type="button"
+            onClick={speedDown}
+            disabled={!canSpeedDown}
+            title={canSpeedDown ? `Slow to ${formatSpeed(nextSpeedDown)}` : 'Minimum speed reached'}
+            className="flex items-center gap-1.5 h-8 px-3
+                       rounded-sm border border-white/10 bg-[#1a1a1a]
+                       font-mono text-[10px] font-bold text-white uppercase tracking-wider
+                       transition-colors hover:border-[#2563eb] hover:text-[#2563eb]
+                       disabled:opacity-30 disabled:cursor-not-allowed"
+            aria-label="Decrease playback speed"
+          >
+            <Rewind className="w-3.5 h-3.5" />
+            {/* Show what speed it will become — not current */}
+            {canSpeedDown ? formatSpeed(nextSpeedDown) : formatSpeed(MIN_SPEED)}
           </button>
+
+          {/* CENTER: Play / Pause */}
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="mx-auto flex h-9 w-9 items-center justify-center
+                       rounded-sm bg-[#2563eb] text-white
+                       transition-colors hover:bg-[#3b82f6]"
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying
+              ? <Pause className="w-4 h-4" fill="currentColor" />
+              : <Play className="w-4 h-4" fill="currentColor" />
+            }
+          </button>
+
+          {/* RIGHT: Speed Up + current speed indicator + Mute + Fullscreen */}
+          <div className="flex items-center gap-3">
+
+            {/* Speed Up button — multiplies current speed by 2 */}
+            <button
+              type="button"
+              onClick={speedUp}
+              disabled={!canSpeedUp}
+              title={canSpeedUp ? `Fast forward to ${formatSpeed(nextSpeedUp)}` : 'Maximum speed reached'}
+              className="flex items-center gap-1.5 h-8 px-3
+                         rounded-sm border border-white/10 bg-[#1a1a1a]
+                         font-mono text-[10px] font-bold text-white uppercase tracking-wider
+                         transition-colors hover:border-[#2563eb] hover:text-[#2563eb]
+                         disabled:opacity-30 disabled:cursor-not-allowed"
+              aria-label="Increase playback speed"
+            >
+              <FastForward className="w-3.5 h-3.5" />
+              {/* Show what speed it will become — not current */}
+              {canSpeedUp ? formatSpeed(nextSpeedUp) : formatSpeed(MAX_SPEED)}
+            </button>
+
+            {/* Current speed indicator — always visible so user knows where they are */}
+            <span className="w-10 text-center font-mono text-[10px] font-bold uppercase tracking-wider text-white/50">
+              {formatSpeed(playbackSpeed)}
+            </span>
+
+            {/* Timestamp */}
+            <span className="hidden sm:block whitespace-nowrap font-mono text-[10px] text-white/60">
+              {formatClockTime(recordingStartMs + absoluteCurrentOffset * 1000)}
+              {' / '}
+              {formatClockTime(recordingEndMs)}
+            </span>
+
+            {/* Mute / Unmute */}
+            <button
+              type="button"
+              onClick={toggleMute}
+              className="flex h-7 w-7 items-center justify-center text-white transition-colors hover:text-[#2563eb]"
+              aria-label={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+
+            {/* Fullscreen */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="flex h-7 w-7 items-center justify-center text-white transition-colors hover:text-[#2563eb]"
+              aria-label="Toggle fullscreen"
+            >
+              <Maximize className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
