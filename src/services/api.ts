@@ -1,13 +1,7 @@
 import { api } from '../lib/axios';
 import type { NVR } from '../types/nvr';
 import type { Camera } from '../types/camera';
-import type {
-  PlaybackRecording,
-  PlaybackResolveRequest,
-  PlaybackResolveResponse,
-  PlaybackSeekRequest,
-  PlaybackSeekResponse,
-} from '../types/playback';
+import type { PlaybackRecording } from '../types/playback';
 
 /**
  * Centralized API service for backend interactions.
@@ -49,16 +43,9 @@ export const apiService = {
 
   // --- NVR Playback ---
   playback: {
-    resolve: (payload: PlaybackResolveRequest) =>
-      api.post<PlaybackResolveResponse>('/playback/resolve', payload),
-    stop: (pathName: string) =>
-      api.delete(`/playback/${encodeURIComponent(pathName)}`),
     recordings: (nvrId: string, channel: number, date: string) =>
       api.get<PlaybackRecording[]>(`/playback/recordings/${nvrId}/${channel}`, {
         params: { date },
       }),
-    // POST /api/playback/seek — reposition an existing HLS session
-    seek: (payload: PlaybackSeekRequest) =>
-      api.post<PlaybackSeekResponse>('/playback/seek', payload),
   },
 };

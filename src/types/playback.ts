@@ -1,23 +1,85 @@
 /**
  * Types for NVR-backed playback sessions and recording discovery.
+ * Rewritten to match the backend API contract exactly (field names, ISO strings).
  */
 
-export interface PlaybackResolveRequest {
+// ── Session creation ──────────────────────────────────────────────────────────
+
+/** POST /api/playback/sessions — request body */
+export interface PlaybackCreateSessionRequest {
   nvrId: string;
   channel: number;
-  startTime: string;
-  endTime: string;
+  /** ISO 8601 UTC — start of the recording window to stream */
+  recordingStart: string;
+  /** ISO 8601 UTC — end of the recording window to stream */
+  recordingEnd: string;
 }
 
-export interface PlaybackResolveResponse {
-  whepUrl: string;
+/** POST /api/playback/sessions — 201 response */
+export interface PlaybackCreateSessionResponse {
+  sessionId: string;
   hlsUrl: string;
-  pathName: string;
+  whepUrl: string;
   durationSeconds: number;
-  /** HiFocus only — NVR local timezone offset in ms. Required by seek. */
-  tzOffsetMs?: number;
+  /** ISO 8601 UTC */
+  recordingStart: string;
+  /** ISO 8601 UTC */
+  recordingEnd: string;
 }
 
+// ── Seek ──────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/playback/sessions/:id/seek — request body.
+ * positionMs is RELATIVE MILLISECONDS from recordingStart, NOT absolute epoch ms.
+ */
+export interface PlaybackSeekRequest {
+  positionMs: number;
+}
+
+/** POST /api/playback/sessions/:id/seek — 200 response */
+export interface PlaybackSeekResponse {
+  hlsUrl: string;
+  whepUrl: string;
+}
+
+// ── Session state (GET + pause/resume/speed responses) ───────────────────────
+
+/** GET /api/playback/sessions/:id — 200 response (also returned by pause/resume/speed) */
+export interface PlaybackSessionStateResponse {
+  sessionId: string;
+  state: 'PLAYING' | 'PAUSED' | 'SEEKING' | 'STOPPED';
+  currentPositionMs: number;
+  speed: number;
+  hlsUrl: string;
+  whepUrl: string;
+  durationSeconds: number;
+  /** ISO 8601 UTC */
+  recordingStart: string;
+  /** ISO 8601 UTC */
+  recordingEnd: string;
+}
+
+// ── Position heartbeat ────────────────────────────────────────────────────────
+
+/**
+ * POST /api/playback/sessions/:id/position — request body.
+ * positionMs is RELATIVE MILLISECONDS from recordingStart.
+ */
+export interface PlaybackPositionRequest {
+  positionMs: number;
+}
+
+// ── Speed ─────────────────────────────────────────────────────────────────────
+
+/** POST /api/playback/sessions/:id/speed — request body */
+export interface PlaybackSpeedRequest {
+  speed: number;
+}
+
+// ── Recording discovery ───────────────────────────────────────────────────────
+
+/** One segment returned by GET /api/playback/recordings/:nvrId/:channel — unchanged */
 export interface PlaybackRecording {
   id?: string;
   pathName?: string;
@@ -28,32 +90,7 @@ export interface PlaybackRecording {
   sizeBytes?: string | number | null;
 }
 
-/**
- * POST /api/playback/seek
- * Stops the old MediaMTX path and provisions a new one from the seek position.
- * All fields must match the backend seekSchema exactly.
- */
-export interface PlaybackSeekRequest {
-  nvrId: string;
-  channel: number;
-  /** ISO 8601 UTC — absolute start of the new segment */
-  startTime: string;
-  /** ISO 8601 UTC — end of the original session (unchanged) */
-  endTime: string;
-  /** pathName of the currently active session — backend tears this down */
-  oldPathName: string;
-  /** HiFocus timezone offset in ms from resolvePlayback; 0 for Hikvision */
-  tzOffsetMs: number;
-}
-
-export interface PlaybackSeekResponse {
-  whepUrl: string;
-  hlsUrl: string;
-  pathName: string;
-  durationSeconds: number;
-  tzOffsetMs?: number;
-}
-
+/** Camera entry returned by the playback cameras listing — unchanged */
 export interface PlaybackCamera {
   cameraId: string;
   nvrId: string;
