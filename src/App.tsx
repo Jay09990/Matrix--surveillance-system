@@ -10,6 +10,7 @@ import AddNVRPage from './pages/AddNVRPage';
 
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import PlaybackPage from './pages/PlaybackPage';
+import DownloadPage from './pages/DownloadPage';
 
 import { SocketProvider } from './components/SocketProvider';
 
@@ -37,6 +38,10 @@ const router = createBrowserRouter([
       {
         path: '/playback',
         element: <PlaybackPage />,
+      },
+      {
+        path: '/playback/download',
+        element: <DownloadPage />,
       },
       {
         path: '/admin',

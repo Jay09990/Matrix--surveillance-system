@@ -47,5 +47,10 @@ export const apiService = {
       api.get<PlaybackRecording[]>(`/playback/recordings/${nvrId}/${channel}`, {
         params: { date },
       }),
+
+    recordingDays: (nvrId: string, channel: number, year: number, month: number) =>
+      api.get<{ days: number[] }>(`/playback/recording-days/${nvrId}/${channel}`, {
+        params: { year, month },
+      }),
   },
 };

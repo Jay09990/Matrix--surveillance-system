@@ -326,6 +326,8 @@ export function PlaybackVideoPlayer({
               className="flex h-7 w-7 items-center justify-center text-white transition-colors hover:text-[#2563eb]">
               <Maximize className="w-4 h-4" />
             </button>
+
+
           </div>
         </div>
       </div>
