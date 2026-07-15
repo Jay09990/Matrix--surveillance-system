@@ -111,7 +111,7 @@ export default function PlaybackPage() {
   const calendarRef = useRef<HTMLDivElement>(null);
 
   const { data: cameras, isLoading: isLoadingCameras } = usePlaybackCameras();
-  const { data: recordings } = usePlaybackRecordings(
+  const { data: recordings, isLoading: isLoadingRecordings } = usePlaybackRecordings(
     selectedCamera?.nvrId ?? null,
     selectedCamera?.channel ?? null,
     selectedDate,
@@ -588,12 +588,13 @@ export default function PlaybackPage() {
                             >
                               <span>{day}</span>
                               {/* Recording dot */}
-                              {hasRecording && !isSelected && (
-                                <span className={[
-                                  'w-1 h-1 rounded-full bg-[#2563eb]',
-                                  isLoadingDays ? 'animate-pulse' : '',
-                                ].join(' ')} />
-                              )}
+                              {isLoadingDays ? (
+                                <span className="mt-1 h-1.5 w-6 rounded-full bg-white/10 animate-pulse" />
+                              ) : hasRecording ? (
+                                <span
+                                  className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-[#2563eb]'}`}
+                                />
+                              ) : null}
                             </button>
                           );
                         })}
@@ -635,6 +636,7 @@ export default function PlaybackPage() {
                 recordings={recordings || []}
                 currentAbsoluteMs={currentAbsoluteMs}
                 onSeek={handleTimelineJump}
+                isLoading={isLoadingRecordings}
                 className="h-32 shrink-0"
               />
             </>

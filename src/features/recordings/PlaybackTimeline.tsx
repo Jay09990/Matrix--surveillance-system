@@ -15,6 +15,7 @@ interface PlaybackTimelineProps {
   recordings: PlaybackRecording[];
   currentAbsoluteMs?: number | null;
   onSeek: (absoluteMs: number) => void;
+  isLoading?: boolean;
   className?: string;
 }
 
@@ -22,7 +23,7 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 1000;
 const SECONDS_PER_DAY = 86400;
 
-export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSeek, className }: PlaybackTimelineProps) {
+export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSeek, isLoading = false, className }: PlaybackTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -216,7 +217,7 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
 
             {/* Timeline Track */}
             <div className="absolute inset-x-0 top-8 bottom-3 bg-[#131313] rounded-sm pointer-events-none mx-0.5 border border-[#1e1e1e]">
-              {recordings?.map((recording, index) => {
+              {!isLoading && recordings?.map((recording, index) => {
                 const endTime = getRecordingEndTime(recording);
                 if (!endTime) return null;
 
@@ -236,6 +237,13 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
                   />
                 );
               })}
+              {isLoading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#000000cc] backdrop-blur-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white animate-pulse">
+                    Loading timeline…
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Active Playhead */}
