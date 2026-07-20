@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
 import {
   AlertCircle,
   ArrowLeft,
@@ -25,11 +27,15 @@ import { usePlaybackCameras, usePlaybackRecordings, useRecordingDays } from '../
 import { useSessionStore } from '../store/useSessionStore';
 import { useDownloadStore } from '../store/useDownloadStore';
 import type { PlaybackCamera, PlaybackRecording } from '../types/playback';
+import type { NVRType } from '../types/nvr';
+
+dayjs.extend(utc);
 
 interface SelectedCamera {
   nvrId: string;
-  channel: number;  
+  channel: number;
   name: string;
+  nvrType: NVRType;
 }
 
 interface ActiveStream {
@@ -55,12 +61,12 @@ interface ActiveStream {
   // Kept for building new seek URLs
   nvrId: string;
   channel: number;
+  nvrType: NVRType;
   recordingEndTime: string; // ISO
 }
 
 interface GroupedNvr { name: string; cameras: PlaybackCamera[] }
 interface GroupedStation { name: string; city: string; nvrs: Record<string, GroupedNvr> }
-
 
 // Build the stream URL — no API call, just query params
 function buildStreamUrl(
@@ -68,6 +74,7 @@ function buildStreamUrl(
   channel: number,
   startTime: string,  // ISO — where to start streaming from
   endTime: string,    // ISO — end of the recording window
+  nvrType: NVRType,
   download = false,   // if true, backend sends Content-Disposition: attachment
 ): string {
   const params = new URLSearchParams({
@@ -79,7 +86,7 @@ function buildStreamUrl(
   if (download) {
     params.set('download', 'true');
   }
-  
+
   // Natively playing a video stream doesn't attach Axios interceptor headers,
   // so we must send the auth token via a query parameter.
   const { token } = useSessionStore.getState();
@@ -101,6 +108,11 @@ export default function PlaybackPage() {
   const [expandedStations, setExpandedStations] = useState<Record<string, boolean>>({});
   const [expandedNvrs, setExpandedNvrs]       = useState<Record<string, boolean>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Play/pause + pending state
+  const [isPlaying, setIsPlaying]             = useState(false);
+  const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
+  const [isStreamPending, setIsStreamPending] = useState(false);
 
   const { isDownloading } = useDownloadStore();
 
@@ -148,17 +160,34 @@ export default function PlaybackPage() {
   // when the <video> unmounts, which kills ffmpeg on the backend automatically.
 
   function handleCameraSelect(camera: PlaybackCamera) {
-    setSelectedCamera({ nvrId: camera.nvrId, channel: camera.channel, name: camera.cameraName });
+    setSelectedCamera({
+      nvrId: camera.nvrId,
+      channel: camera.channel,
+      name: camera.cameraName,
+      nvrType: camera.nvr.type,
+    });
     setActiveStream(null);
     setCurrentAbsoluteMs(null);
     setPlaybackSpeed(1);
+    setIsPlaying(false);
+    setHasPlaybackStarted(false);
+    setIsStreamPending(false);
   }
 
   function handleDateChange(date: string) {
     setSelectedDate(date);
     setActiveStream(null);
     setCurrentAbsoluteMs(null);
+    setIsPlaying(false);
+    setHasPlaybackStarted(false);
+    setIsStreamPending(false);
   }
+
+  // Called when stream is ready (canPlay) — lifts the pending overlay
+  const handleStreamReady = useCallback(() => {
+    setIsStreamPending(false);
+    setHasPlaybackStarted(true);
+  }, []);
 
   // Called by the player's custom seekbar when user drags to a new position
   const handleSeekbarJump = useCallback((absoluteMs: number) => {
@@ -180,8 +209,10 @@ export default function PlaybackPage() {
       activeStream.channel,
       new Date(clamped).toISOString(),
       activeStream.recordingEndTime,
+      activeStream.nvrType,
     );
 
+    setIsStreamPending(true);
     setActiveStream(prev => prev ? { ...prev, streamUrl: newStreamUrl, streamStartMs: clamped } : prev);
     setCurrentAbsoluteMs(clamped);
   }, [activeStream, selectedCamera, isDownloading]);
@@ -195,13 +226,24 @@ export default function PlaybackPage() {
     if (!recordings || !selectedCamera) return;
 
     // Find which recording segment contains this timestamp
-    const targetRecording = recordings.find((r: PlaybackRecording) => {
+    let targetRecording = recordings.find((r: PlaybackRecording) => {
       const start = new Date(r.startTime).getTime();
       let end = start + 5 * 60 * 1000;
       if (r.endTime) end = new Date(r.endTime).getTime();
       else if (r.durationSeconds) end = start + r.durationSeconds * 1000;
-      return absoluteMs >= start && absoluteMs <= end;
+      return absoluteMs >= start && absoluteMs < end;
     });
+
+    // Fallback: if we seeked exactly to the end of the very last segment
+    if (!targetRecording) {
+      targetRecording = recordings.find((r: PlaybackRecording) => {
+        const start = new Date(r.startTime).getTime();
+        let end = start + 5 * 60 * 1000;
+        if (r.endTime) end = new Date(r.endTime).getTime();
+        else if (r.durationSeconds) end = start + r.durationSeconds * 1000;
+        return absoluteMs === end;
+      });
+    }
 
     if (!targetRecording) return;
 
@@ -228,8 +270,11 @@ export default function PlaybackPage() {
       selectedCamera.channel,
       new Date(absoluteMs).toISOString(),  // start from where user clicked
       endTimeStr,
+      selectedCamera.nvrType,
     );
 
+    setIsStreamPending(true);
+    setIsPlaying(true);
     setActiveStream({
       streamUrl,
       streamStartMs: absoluteMs, // ← the actual click point; this is where the stream begins
@@ -238,16 +283,50 @@ export default function PlaybackPage() {
       durationSeconds,
       nvrId: selectedCamera.nvrId,
       channel: selectedCamera.channel,
+      nvrType: selectedCamera.nvrType,
       recordingEndTime: endTimeStr,
     });
     setCurrentAbsoluteMs(absoluteMs);
   }, [recordings, selectedCamera, isDownloading]);
+
+  // Auto-advance: when the current segment ends, load the next one
+  const handleSegmentEnded = useCallback(() => {
+    if (!recordings || !activeStream) return;
+
+    // Sort recordings by startTime
+    const sorted = [...recordings].sort(
+      (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    );
+
+    // Find index of the current segment
+    const currentIdx = sorted.findIndex(
+      (r) => new Date(r.startTime).getTime() === activeStream.recordingStartMs
+    );
+
+    const nextRecording = currentIdx >= 0 ? sorted[currentIdx + 1] : null;
+
+    if (nextRecording) {
+      // Start next segment from its beginning
+      handleTimelineJump(new Date(nextRecording.startTime).getTime());
+    } else {
+      // No more segments — stop playback
+      setIsPlaying(false);
+    }
+  }, [recordings, activeStream, handleTimelineJump]);
+
+  // Toggle play/pause (called by timeline button and video overlay click)
+  const handlePlayPause = useCallback(() => {
+    setIsPlaying(p => !p);
+  }, []);
 
   // Stop active playback if a background download starts
   useEffect(() => {
     if (isDownloading && activeStream) {
       setActiveStream(null);
       setCurrentAbsoluteMs(null);
+      setIsPlaying(false);
+      setHasPlaybackStarted(false);
+      setIsStreamPending(false);
       toast.warning('Playback stopped because a download has started. Only one RTSP connection is supported at a time.');
     }
   }, [isDownloading, activeStream]);
@@ -473,6 +552,9 @@ export default function PlaybackPage() {
                     <h1 className="text-lg font-bold text-white uppercase tracking-tight">{selectedCamera.name}</h1>
                     <p className="text-[10px] font-mono text-[#8d90a0] uppercase tracking-widest">
                       CH{selectedCamera.channel.toString().padStart(2, '0')} - PLAYBACK MODE
+                      {selectedCamera.nvrType === 'HIFOCUS' && (
+                        <span className="ml-2 text-[#f59e0b]">· HiFocus</span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -492,6 +574,7 @@ export default function PlaybackPage() {
                         cameraName: selectedCamera.name,
                         nvrName: meta?.nvr.name ?? '',
                         stationName: meta?.nvr.station?.name ?? '',
+                        nvrType: selectedCamera.nvrType,
                       });
                       navigate(`/playback/download?${params.toString()}`);
                     }}
@@ -601,44 +684,68 @@ export default function PlaybackPage() {
                       </div>
                     </div>
                   )}
+                  </div>
                 </div>
               </div>
-            </div>
 
-              {/* Player */}
-              <div className="flex-1 min-h-0 h-0 bg-black flex items-center justify-center relative">
-                {activeStream ? (
-                  <PlaybackVideoPlayer
-                    key={activeStream.streamUrl}
-                    streamUrl={activeStream.streamUrl}
-                    streamStartMs={activeStream.streamStartMs}
-                    segmentStartMs={activeStream.recordingStartMs}
-                    segmentEndMs={activeStream.recordingEndMs}
-                    durationSeconds={activeStream.durationSeconds}
-                    playbackSpeed={playbackSpeed}
-                    onPlaybackSpeedChange={setPlaybackSpeed}
-                    onSeekToAbsolute={handleSeekbarJump}
-                    onTimeUpdate={setCurrentAbsoluteMs}
-                  />
-                ) : (
-                  <div className="text-center">
-                    <Play className="w-12 h-12 text-[#2563eb] mb-4 mx-auto" />
-                    <p className="text-[#8d90a0] text-xs font-bold uppercase tracking-widest">
-                      Select footage or time to start playback
-                    </p>
+              {/* Player + Timeline wrapper — stream-pending overlay applied here */}
+              <div className="flex-1 min-h-0 flex flex-col relative">
+
+                {/* Stream-pending overlay — blocks all interaction while new stream is loading */}
+                {isStreamPending && (
+                  <div className="absolute inset-0 z-50 bg-black/30 flex items-center justify-center cursor-wait">
+                    <div className="flex items-center gap-3 bg-[#131313]/90 border border-[#2563eb]/30 rounded-sm px-5 py-3">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-t-2 border-[#2563eb]" />
+                      <span className="text-[11px] font-bold uppercase tracking-widest text-[#2563eb]">
+                        Loading stream…
+                      </span>
+                    </div>
                   </div>
                 )}
-              </div>
 
-              {/* Timeline */}
-              <PlaybackTimeline
-                dateStr={selectedDate}
-                recordings={recordings || []}
-                currentAbsoluteMs={currentAbsoluteMs}
-                onSeek={handleTimelineJump}
-                isLoading={isLoadingRecordings}
-                className="h-32 shrink-0"
-              />
+                {/* Player */}
+                <div className="flex-1 min-h-0 h-0 bg-black flex items-center justify-center relative">
+                  {activeStream ? (
+                    <PlaybackVideoPlayer
+                      key={activeStream.streamUrl}
+                      streamUrl={activeStream.streamUrl}
+                      streamStartMs={activeStream.streamStartMs}
+                      segmentStartMs={activeStream.recordingStartMs}
+                      segmentEndMs={activeStream.recordingEndMs}
+                      durationSeconds={activeStream.durationSeconds}
+                      playbackSpeed={playbackSpeed}
+                      isPlaying={isPlaying}
+                      isHiFocus={selectedCamera.nvrType === 'HIFOCUS'}
+                      onPlayPause={handlePlayPause}
+                      onSeekToAbsolute={handleSeekbarJump}
+                      onTimeUpdate={setCurrentAbsoluteMs}
+                      onStreamReady={handleStreamReady}
+                      onEnded={handleSegmentEnded}
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <Play className="w-12 h-12 text-[#2563eb] mb-4 mx-auto" />
+                      <p className="text-[#8d90a0] text-xs font-bold uppercase tracking-widest">
+                        Select footage or time to start playback
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Timeline */}
+                <PlaybackTimeline
+                  dateStr={selectedDate}
+                  recordings={recordings || []}
+                  currentAbsoluteMs={currentAbsoluteMs}
+                  onSeek={handleTimelineJump}
+                  isLoading={isLoadingRecordings}
+                  className="h-32 shrink-0"
+                  isPlaying={isPlaying}
+                  isHiFocus={selectedCamera.nvrType === 'HIFOCUS'}
+                  hasStarted={hasPlaybackStarted}
+                  onPlayPause={handlePlayPause}
+                />
+              </div>
             </>
           )}
         </div>

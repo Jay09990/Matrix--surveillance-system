@@ -1,3 +1,5 @@
+import type { NVRType } from './nvr';
+
 /**
  * Types for NVR-backed playback sessions and recording discovery.
  * Rewritten to match the backend API contract exactly (field names, ISO strings).
@@ -101,6 +103,7 @@ export interface PlaybackCamera {
     id: string;
     name: string;
     ip: string;
+    type: NVRType;
     station: {
       id: string;
       name: string;

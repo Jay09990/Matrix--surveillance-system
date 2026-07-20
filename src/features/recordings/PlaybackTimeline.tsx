@@ -1,5 +1,6 @@
-import React, { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent, useMemo } from 'react';
-import { Play } from 'lucide-react';
+import { useRef, useState, useEffect, type MouseEvent as ReactMouseEvent, useMemo } from 'react';
+import { Pause, Play } from 'lucide-react';
+import dayjs from 'dayjs';
 import type { PlaybackRecording } from '../../types/playback';
 
 function getRecordingEndTime(recording: PlaybackRecording) {
@@ -17,13 +18,30 @@ interface PlaybackTimelineProps {
   onSeek: (absoluteMs: number) => void;
   isLoading?: boolean;
   className?: string;
+
+  // Play/pause integration
+  isPlaying: boolean;
+  isHiFocus?: boolean;
+  hasStarted: boolean;   // true once the user has clicked play for the first time (resets on camera/date change)
+  onPlayPause: () => void;
 }
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 1000;
 const SECONDS_PER_DAY = 86400;
 
-export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSeek, isLoading = false, className }: PlaybackTimelineProps) {
+export function PlaybackTimeline({
+  dateStr,
+  recordings,
+  currentAbsoluteMs,
+  onSeek,
+  isLoading = false,
+  className,
+  isPlaying,
+  isHiFocus = false,
+  hasStarted,
+  onPlayPause,
+}: PlaybackTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -111,9 +129,19 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
     const t = [];
     const numHours = 24;
     for (let i = 0; i <= numHours; i++) {
-      t.push({ type: 'hour', percent: (i / 24) * 100, label: `${i.toString().padStart(2, '0')}:00` });
+      let label = `${i.toString().padStart(2, '0')}:00`;
+      let halfLabel = zoom > 15 ? `${i.toString().padStart(2, '0')}:30` : '';
+
+      if (isHiFocus) {
+        const utcDate = new Date(`${dateStr}T${i.toString().padStart(2, '0')}:00:00Z`);
+        label = dayjs(utcDate).local().format('HH:mm');
+        const halfUtcDate = new Date(`${dateStr}T${i.toString().padStart(2, '0')}:30:00Z`);
+        halfLabel = zoom > 15 ? dayjs(halfUtcDate).local().format('HH:mm') : '';
+      }
+
+      t.push({ type: 'hour', percent: (i / 24) * 100, label });
       if (zoom > 5 && i < 24) {
-        t.push({ type: 'half', percent: ((i + 0.5) / 24) * 100, label: zoom > 15 ? `${i.toString().padStart(2, '0')}:30` : '' });
+        t.push({ type: 'half', percent: ((i + 0.5) / 24) * 100, label: halfLabel });
       }
       if (zoom > 15 && i < 24) {
         t.push({ type: 'quarter', percent: ((i + 0.25) / 24) * 100, label: '' });
@@ -128,7 +156,7 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
       }
     }
     return t;
-  }, [zoom]);
+  }, [zoom, isHiFocus, dateStr]);
 
   let currentPipePercent = null;
   if (currentAbsoluteMs) {
@@ -145,9 +173,31 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
   }
 
   const formatTime = (ms: number) => {
+    if (isHiFocus) {
+      return dayjs(ms).local().format('HH:mm:ss');
+    }
     const d = new Date(ms);
     return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}:${d.getUTCSeconds().toString().padStart(2, '0')}`;
   };
+
+  // Play/Pause button handler
+  function handlePlayPauseClick() {
+    if (!hasStarted) {
+      // First click — seek to beginning of first recording then start playing
+      if (recordings && recordings.length > 0) {
+        const firstRec = recordings.reduce((earliest, current) => {
+          return new Date(current.startTime) < new Date(earliest.startTime) ? current : earliest;
+        });
+        onSeek(new Date(firstRec.startTime).getTime());
+      } else {
+        // Fallback: beginning of selected day
+        const dayStart = new Date(`${dateStr}T00:00:00Z`);
+        onSeek(dayStart.getTime());
+      }
+    }
+    // Always toggle play/pause (parent sets hasStarted=true when stream loads)
+    onPlayPause();
+  }
 
   return (
     <div className={`w-full overflow-hidden bg-[#0a0a0a] border-t border-[#1e1e1e] select-none flex flex-col ${className}`}>
@@ -156,26 +206,16 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
         <span className="text-[9px] font-mono text-[#4a4a4a] uppercase">Scroll to zoom • Drag to pan</span>
       </div>
       <div className="flex flex-row flex-1 overflow-hidden">
-        {/* Start Button */}
+        {/* Play/Pause Button */}
         <div className="flex items-center justify-center px-4 border-r border-[#1e1e1e] bg-[#0d0d0d]">
           <button
-            onClick={() => {
-              if (recordings && recordings.length > 0) {
-                // Find the absolute earliest recording of the day
-                const firstRec = recordings.reduce((earliest, current) => {
-                  return new Date(current.startTime) < new Date(earliest.startTime) ? current : earliest;
-                });
-                onSeek(new Date(firstRec.startTime).getTime());
-              } else {
-                // Fallback: beginning of the selected day
-                const dayStart = new Date(`${dateStr}T00:00:00Z`);
-                onSeek(dayStart.getTime());
-              }
-            }}
+            onClick={handlePlayPauseClick}
             className="w-10 h-10 rounded-full bg-[#2563eb] flex items-center justify-center hover:bg-[#1d4ed8] transition-colors shadow-[0_0_10px_rgba(37,99,235,0.4)]"
-            title="Start from beginning"
+            title={!hasStarted ? 'Start playback from beginning' : isPlaying ? 'Pause' : 'Play'}
           >
-            <Play className="w-4 h-4 text-white ml-0.5" fill="currentColor" />
+            {isPlaying
+              ? <Pause className="w-4 h-4 text-white" fill="currentColor" />
+              : <Play className="w-4 h-4 text-white ml-0.5" fill="currentColor" />}
           </button>
         </div>
 
@@ -231,7 +271,7 @@ export function PlaybackTimeline({ dateStr, recordings, currentAbsoluteMs, onSee
 
                 return (
                   <div
-                    key={`${recording.nvrId}-${recording.channel}-${recording.startTime}-${index}`}
+                    key={`rec-${recording.startTime}-${index}`}
                     className="absolute top-0 h-full bg-[#2563eb]/60 border-x border-[#2563eb]/80 shadow-[0_0_10px_rgba(37,99,235,0.2)]"
                     style={{ left: `${left}%`, width: `${Math.max(width, 0.05)}%` }}
                   />

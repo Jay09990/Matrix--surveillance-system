@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import type { NVRType } from '../types/nvr';
 import {
   ArrowLeft,
   Calendar,
@@ -17,8 +20,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Topbar } from '../components/Topbar';
-import { usePlaybackRecordings, type RecordingWithMeta } from '../features/recordings/useRecordings';
+import { usePlaybackRecordings, useRecordingDays, type RecordingWithMeta } from '../features/recordings/useRecordings';
 import { useDownloadStore, type DownloadItem } from '../store/useDownloadStore';
+
+dayjs.extend(utc);
 import {
   Table,
   TableBody,
@@ -139,6 +144,7 @@ export default function DownloadPage() {
   const cameraName = searchParams.get('cameraName') ?? 'Unknown Camera';
   const nvrName = searchParams.get('nvrName') ?? 'Unknown NVR';
   const stationName = searchParams.get('stationName') ?? 'Unknown Station';
+  const nvrType = (searchParams.get('nvrType') ?? 'HIKVISION') as NVRType;
   const channel = channelStr ? Number(channelStr) : null;
 
   // Date state
@@ -148,10 +154,6 @@ export default function DownloadPage() {
   const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth() + 1);
   const calendarRef = useRef<HTMLDivElement>(null);
-
-  // Time range filter
-  const [startTime, setStartTime] = useState('00:00:00');
-  const [endTime, setEndTime] = useState('23:59:59');
 
   // Download store
   const { queue, isDownloading, enqueue, enqueueAll, pause, resume } = useDownloadStore();
@@ -163,6 +165,13 @@ export default function DownloadPage() {
     nvrId,
     channel,
     selectedDate,
+  );
+
+  const { data: recordingDays, isLoading: isLoadingDays } = useRecordingDays(
+    nvrId,
+    channel,
+    calendarYear,
+    calendarMonth,
   );
 
   console.log('DownloadPage Query Result:', { rawRecordings, isLoading, isError });
@@ -180,15 +189,7 @@ export default function DownloadPage() {
   }, [rawRecordings, nvrId, channel, stationName, nvrName, cameraName]);
 
   // Filtered by time range
-  const filteredRecordings = useMemo<RecordingWithMeta[]>(() => {
-    if (!recordings) return [];
-    const startMs = parseTimeToMs(selectedDate, startTime);
-    const endMs = parseTimeToMs(selectedDate, endTime);
-    return recordings.filter((r) => {
-      const rStart = new Date(r.startTime).getTime();
-      return rStart >= startMs && rStart <= endMs;
-    });
-  }, [recordings, selectedDate, startTime, endTime]);
+  const filteredRecordings = recordings;
 
   // Close calendar on outside click
   useEffect(() => {
@@ -378,6 +379,7 @@ export default function DownloadPage() {
                     {calendarGrid.map((day, i) => {
                       if (!day) return <div key={`empty-${i}`} className="w-8 h-8" />;
                       const dateStr = `${calendarYear}-${String(calendarMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      const hasRecording = recordingDays?.includes(day);
                       const isSelected = dateStr === selectedDate;
                       const isToday = dateStr === todayStr;
                       return (
@@ -386,15 +388,25 @@ export default function DownloadPage() {
                           type="button"
                           onClick={() => { setSelectedDate(dateStr); setCalendarOpen(false); }}
                           className={[
-                            'w-8 h-8 mx-auto flex items-center justify-center rounded-sm',
-                            'text-[11px] font-mono font-bold transition-colors',
+                            'w-8 h-8 mx-auto flex flex-col items-center justify-center rounded-sm',
+                            'text-[11px] font-mono font-bold transition-colors relative',
                             isSelected
                               ? 'bg-[#2563eb] text-white'
-                              : 'text-white hover:bg-[#1e1e1e]',
+                              : hasRecording
+                                ? 'text-white hover:bg-[#1e1e1e]'
+                                : 'text-[#8d90a0] hover:bg-[#1e1e1e]',
                             isToday && !isSelected ? 'ring-1 ring-[#2563eb]/40' : '',
                           ].join(' ')}
                         >
-                          {day}
+                          <span>{day}</span>
+                          {/* Recording dot */}
+                          {isLoadingDays ? (
+                            <span className="mt-1 h-1.5 w-6 rounded-full bg-white/10 animate-pulse" />
+                          ) : hasRecording ? (
+                            <span
+                              className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-[#2563eb]'}`}
+                            />
+                          ) : null}
                         </button>
                       );
                     })}
@@ -402,48 +414,6 @@ export default function DownloadPage() {
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Time range */}
-          <div className="p-4 border-b border-[#1e1e1e] space-y-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#8d90a0]">
-              Time Range Filter
-            </p>
-            <div>
-              <label className="block text-[9px] font-bold uppercase tracking-widest text-[#5a5a5a] mb-1">
-                Start Time (UTC)
-              </label>
-              <input
-                type="time"
-                step={1}
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full rounded-sm border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-1.5
-                           font-mono text-sm text-white outline-none [color-scheme:dark]
-                           focus:border-[#2563eb] transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-[9px] font-bold uppercase tracking-widest text-[#5a5a5a] mb-1">
-                End Time (UTC)
-              </label>
-              <input
-                type="time"
-                step={1}
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="w-full rounded-sm border border-[#2a2a2a] bg-[#1a1a1a] px-3 py-1.5
-                           font-mono text-sm text-white outline-none [color-scheme:dark]
-                           focus:border-[#2563eb] transition-colors"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => { setStartTime('00:00:00'); setEndTime('23:59:59'); }}
-              className="text-[9px] font-bold uppercase tracking-widest text-[#8d90a0] hover:text-white transition-colors"
-            >
-              Reset to full day
-            </button>
           </div>
 
           {/* Stats */}
@@ -548,12 +518,6 @@ export default function DownloadPage() {
                     const itemId = buildItemId(rec.nvrId, rec.channel, rec.startTime);
                     const queueItem = queueMap.get(itemId);
 
-                    const endTimeIso =
-                      rec.endTime ??
-                      new Date(
-                        new Date(rec.startTime).getTime() + (rec.durationSeconds ?? 300) * 1000,
-                      ).toISOString();
-
                     return (
                       <TableRow
                         key={itemId}
@@ -568,11 +532,26 @@ export default function DownloadPage() {
                         <TableCell className="text-[11px] font-bold text-white font-mono">
                           CH{String(rec.channel).padStart(2, '0')}
                         </TableCell>
-                        <TableCell className="text-[11px] font-mono text-[#8d90a0]">
-                          {toHHMMSS(rec.startTime)}
+                        <TableCell className="font-mono text-[10px] text-[#8d90a0]">
+                          {nvrType === 'HIFOCUS'
+                            ? dayjs(rec.startTime).local().format('HH:mm:ss')
+                            : format(new Date(rec.startTime), 'HH:mm:ss')}
                         </TableCell>
-                        <TableCell className="text-[11px] font-mono text-[#8d90a0]">
-                          {toHHMMSS(endTimeIso)}
+                        <TableCell className="font-mono text-[10px] text-[#8d90a0]">
+                          {rec.endTime ? (
+                            nvrType === 'HIFOCUS'
+                              ? dayjs(rec.endTime).local().format('HH:mm:ss')
+                              : format(new Date(rec.endTime), 'HH:mm:ss')
+                          ) : rec.durationSeconds ? (
+                            (() => {
+                              const endIso = new Date(new Date(rec.startTime).getTime() + rec.durationSeconds * 1000).toISOString();
+                              return nvrType === 'HIFOCUS'
+                                ? dayjs(endIso).local().format('HH:mm:ss')
+                                : format(new Date(endIso), 'HH:mm:ss');
+                            })()
+                          ) : (
+                            '—'
+                          )}
                         </TableCell>
                         <TableCell>
                           <StatusBadge item={queueItem} />

@@ -33,6 +33,7 @@ export function usePlaybackCameras() {
               id: nvr.id,
               name: nvr.name,
               ip: nvr.ip,
+              type: nvr.type,
               station: nvr.station,
             },
           }));
