@@ -1,6 +1,6 @@
 import { Topbar } from '../components/Topbar';
 import { Link, useNavigate } from 'react-router-dom';
-import { HardDrive, ChevronRight, ArrowLeft } from 'lucide-react';
+import { HardDrive, ChevronRight, ArrowLeft, Users } from 'lucide-react';
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -37,6 +37,20 @@ export default function AdminDashboardPage() {
                 <ChevronRight className="w-5 h-5 text-[#8d90a0] group-hover:text-[#2563eb] transition-colors" />
               </h2>
               <p className="text-sm text-[#8d90a0]">Register a new Network Video Recorder and create its station in one step.</p>
+            </Link>
+
+            <Link
+              to="/admin/users"
+              className="bg-[#131313] border border-[#2a2a2a] p-6 flex flex-col items-start transition-all hover:border-[#2563eb] hover:bg-[#1a1a1a] group"
+            >
+              <div className="p-3 bg-[#1e1e1e] border border-[#2a2a2a] rounded-[2px] mb-4 group-hover:border-[#2563eb]/30 group-hover:bg-[#2563eb]/10">
+                <Users className="w-6 h-6 text-[#2563eb]" />
+              </div>
+              <h2 className="text-lg font-bold text-[#e5e2e1] mb-2 flex items-center justify-between w-full">
+                Manage Users
+                <ChevronRight className="w-5 h-5 text-[#8d90a0] group-hover:text-[#2563eb] transition-colors" />
+              </h2>
+              <p className="text-sm text-[#8d90a0]">Create, update, and manage Admin and Viewer accounts.</p>
             </Link>
           </div>
         </div>

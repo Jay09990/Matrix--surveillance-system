@@ -7,6 +7,8 @@ import LoginPage from './pages/LoginPage';
 import StationSelectorPage from './pages/StationSelectorPage';
 import LiveViewPage from './pages/LiveViewPage';
 import AddNVRPage from './pages/AddNVRPage';
+import UserManagementPage from './pages/UserManagementPage';
+import AddUserPage from './pages/AddUserPage';
 
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import PlaybackPage from './pages/PlaybackPage';
@@ -58,6 +60,18 @@ const router = createBrowserRouter([
           {
             path: 'nvrs/edit/:nvrId',
             element: <AddNVRPage />,
+          },
+          {
+            path: 'users',
+            element: <UserManagementPage />,
+          },
+          {
+            path: 'users/add',
+            element: <AddUserPage />,
+          },
+          {
+            path: 'users/edit/:userId',
+            element: <AddUserPage />,
           },
         ],
       },

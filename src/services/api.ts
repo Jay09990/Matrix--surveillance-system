@@ -2,6 +2,7 @@ import { api } from '../lib/axios';
 import type { NVR } from '../types/nvr';
 import type { Camera } from '../types/camera';
 import type { PlaybackRecording } from '../types/playback';
+import type { User as AppUser } from '../types/user';
 
 /**
  * Centralized API service for backend interactions.
@@ -52,5 +53,22 @@ export const apiService = {
       api.get<{ days: number[] }>(`/playback/recording-days/${nvrId}/${channel}`, {
         params: { year, month },
       }),
+  },
+
+  // --- Users ---
+  users: {
+    list: () => api.get<AppUser[]>('/users'),
+    get: (id: string) => api.get<AppUser>(`/users/${id}`),
+    create: (data: { email: string; password: string; role: 'ADMIN' | 'VIEWER' }) =>
+      api.post<AppUser>('/users', data),
+    update: (id: string, data: { email?: string; role?: 'ADMIN' | 'VIEWER' }) =>
+      api.put<AppUser>(`/users/${id}`, data),
+    delete: (id: string) => api.delete(`/users/${id}`),
+    setStatus: (id: string, isActive: boolean) =>
+      api.patch<AppUser>(`/users/${id}/status`, { isActive }),
+    resetPassword: (id: string, password: string) =>
+      api.patch(`/users/${id}/password`, { password }),
+    changeOwnPassword: (currentPassword: string, newPassword: string) =>
+      api.patch('/users/me/password', { currentPassword, newPassword }),
   },
 };

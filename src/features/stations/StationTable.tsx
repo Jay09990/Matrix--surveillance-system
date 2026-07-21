@@ -10,6 +10,7 @@ import { Pencil, Trash2, Loader2, Search, AlertCircle, Activity } from 'lucide-r
 import { formatDistanceToNow } from 'date-fns';
 import { useAllNVRs } from '../nvrs/useNVRs';
 import { useSessionStore } from '../../store/useSessionStore';
+import { isAdminOrAbove } from '../../lib/roles';
 import { apiService } from '../../services/api';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Badge } from '../../components/ui/badge';
@@ -45,7 +46,7 @@ export function StationTable() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useSessionStore();
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isAdmin = isAdminOrAbove(user?.role);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [stationFilter, setStationFilter] = useState<string>('all');

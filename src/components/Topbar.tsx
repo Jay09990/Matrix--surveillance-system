@@ -1,7 +1,8 @@
 import { useSessionStore } from '../store/useSessionStore';
-import { Monitor, Settings, PlusCircle, LogOut, ChevronDown, Film } from 'lucide-react';
+import { isAdminOrAbove } from '../lib/roles';
+import { Monitor, Settings, LogOut, ChevronDown, Film } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Button } from './ui/button';
+
 import { Badge } from './ui/badge';
 import {
   DropdownMenu,
@@ -34,7 +35,7 @@ export const Topbar = () => {
   };
 
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isAdmin = isAdminOrAbove(user?.role);
 
   return (
     <div className="h-14 border-b border-[#2a2a2a] bg-[#131313] flex items-center justify-between px-6 shrink-0">
@@ -43,10 +44,6 @@ export const Topbar = () => {
           <Monitor className="w-5 h-5 text-[#2563eb]" />
           <span className="font-bold tracking-tighter text-lg">MATRIX</span>
         </Link>
-        <div className="h-4 w-px bg-[#2a2a2a]" />
-        <span className="text-[#8d90a0] font-mono text-xs tracking-widest uppercase">
-          VMS Portal
-        </span>
         <div className="h-4 w-px bg-[#2a2a2a]" />
         <Link 
           to="/playback" 
@@ -58,17 +55,7 @@ export const Topbar = () => {
       </div>
 
       <div className="flex items-center gap-3">
-        {isAdmin && (
-          <Button
-            variant="default"
-            size="sm"
-            className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-[2px] h-8 px-3 text-xs font-semibold flex items-center gap-1.5"
-            onClick={() => navigate('/admin/nvrs/add')}
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            Add NVR
-          </Button>
-        )}
+
 
         {isAdmin && (
           <Link
