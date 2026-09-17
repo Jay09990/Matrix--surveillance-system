@@ -14,7 +14,16 @@ export const useChannels = (nvrId: string | null) => {
       }
 
       const response = await apiService.cameras.listByNvr(nvrId!);
-      return response.data; // backend already returns 16 slots
+      try {
+        const { data: nvr } = await apiService.nvrs.get(nvrId!);
+        const count = nvr?._count?.cameras;
+        if (typeof count === 'number') {
+          return response.data.slice(0, count);
+        }
+      } catch {
+        // Fallback to full array if NVR fetch fails
+      }
+      return response.data;
     },
     enabled: !!nvrId,
   });

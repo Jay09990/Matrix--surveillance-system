@@ -55,24 +55,34 @@ export const AddNVRForm = () => {
   // Populate form when editing
   useEffect(() => {
     if (existingNvr) {
+      const typeNormalized = existingNvr.type
+        ? (existingNvr.type.toUpperCase() as 'HIFOCUS' | 'HIKVISION')
+        : 'HIFOCUS';
+
       form.reset({
-        name: existingNvr.name,
-        ip: existingNvr.ip,
-        type: existingNvr.type,
-        rtspPort: existingNvr.rtspPort,
-        httpPort: existingNvr.httpPort,
-        username: existingNvr.username,
+        name: existingNvr.name || '',
+        ip: existingNvr.ip || '',
+        type: typeNormalized,
+        rtspPort: existingNvr.rtspPort ?? undefined,
+        httpPort: existingNvr.httpPort ?? undefined,
+        username: existingNvr.username || 'admin',
         password: '',
-        stationName: existingNvr.station.name,
-        stationCity: existingNvr.station.city,
+        // Handle both nested station object and flat properties if API varies
+        stationName: existingNvr.station?.name || (existingNvr as any).stationName || '',
+        stationCity: existingNvr.station?.city || (existingNvr as any).stationCity || '',
       });
     }
   }, [existingNvr, form]);
 
   const onSubmit = async (data: NVRFormData) => {
     try {
+      const payload: Partial<NVRFormData> = { ...data };
+      if (isEdit && !payload.password) {
+        delete payload.password;
+      }
+
       if (isEdit && nvrId) {
-        await apiService.nvrs.update(nvrId, data);
+        await apiService.nvrs.update(nvrId, payload);
         toast.success('NVR updated successfully');
         await queryClient.invalidateQueries({ queryKey: ['nvr', nvrId] });
       } else {
@@ -177,7 +187,7 @@ export const AddNVRForm = () => {
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-[#0d0d0d] border-[#2a2a2a] text-[#e5e2e1]">
-                        <SelectValue />
+                        <SelectValue placeholder="Select NVR Type" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent className="bg-[#131313] border-[#2a2a2a] text-[#e5e2e1]">

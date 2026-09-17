@@ -22,8 +22,10 @@ export function usePlaybackCameras() {
       const camerasByNvr = await Promise.all(
         nvrs.map(async (nvr) => {
           const { data: cameras } = await apiService.cameras.listByNvr(nvr.id);
+          const count = nvr._count?.cameras;
+          const filteredCameras = typeof count === 'number' ? cameras.slice(0, count) : cameras;
 
-          return cameras.map((camera) => ({
+          return filteredCameras.map((camera) => ({
             cameraId: camera.id,
             nvrId: camera.nvrId,
             channel: camera.channel,

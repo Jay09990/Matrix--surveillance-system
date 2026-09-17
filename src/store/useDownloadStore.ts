@@ -19,76 +19,91 @@ export interface DownloadItem {
 
 type EnqueuePayload = Omit<DownloadItem, 'status' | 'progress' | 'receivedBytes'>;
 
+interface FileWritable {
+  write: (chunk: Blob | Uint8Array | ArrayBuffer) => Promise<void>;
+  close: () => Promise<void>;
+  abort?: () => Promise<void>;
+}
+interface FileHandle {
+  createWritable: () => Promise<FileWritable>;
+}
+interface DirHandle {
+  getFileHandle: (name: string, opts?: { create?: boolean }) => Promise<FileHandle>;
+}
+
+type FSWindow = Window & typeof globalThis & {
+  showSaveFilePicker?: (o: {
+    suggestedName: string;
+    types: Array<{ description: string; accept: Record<string, string[]> }>;
+  }) => Promise<FileHandle>;
+  showDirectoryPicker?: (o?: { mode?: 'read' | 'readwrite' }) => Promise<DirHandle>;
+};
+
 interface DownloadStore {
   queue: DownloadItem[];
   isDownloading: boolean;
   _isProcessing: boolean;
-  enqueue: (item: EnqueuePayload) => void;
-  enqueueAll: (items: EnqueuePayload[]) => void;
-  pause: (id: string) => void;
-  resume: (id: string) => void;
+  _controllers: Map<string, AbortController>;
+  _fileHandles: Map<string, FileHandle>;
+  _dirHandle: DirHandle | null;
+  enqueue: (item: EnqueuePayload) => Promise<boolean>;
+  enqueueAll: (items: EnqueuePayload[]) => Promise<boolean>;
   removeItem: (id: string) => void;
   clearDone: () => void;
   _processNext: () => void;
-  _controllers: Map<string, AbortController>;
 }
 
-function buildDownloadUrl(
-  nvrId: string,
-  channel: number,
-  startTime: string,
-  endTime: string,
-): string {
-  const params = new URLSearchParams({
-    nvrId,
-    channel: String(channel),
-    startTime,
-    endTime,
-  });
+function buildDownloadUrl(nvrId: string, channel: number, startTime: string, endTime: string) {
+  const params = new URLSearchParams({ nvrId, channel: String(channel), startTime, endTime });
   const { token } = useSessionStore.getState();
   if (token) params.set('token', token);
   return `/api/playback/download?${params.toString()}`;
 }
 
-type FileSystemAccessWindow = Window & typeof globalThis & {
-  showSaveFilePicker?: (options: {
-    suggestedName: string;
-    types: Array<{
-      description: string;
-      accept: Record<string, string[]>;
-    }>;
-  }) => Promise<{
-    createWritable: () => Promise<{
-      write: (chunk: Blob | Uint8Array | ArrayBuffer) => Promise<void>;
-      close: () => Promise<void>;
-    }>;
-  }>;
-};
+const isAbort = (e: unknown) =>
+  e instanceof Error && (e.name === 'AbortError' || e.name === 'NotAllowedError');
 
 export const useDownloadStore = create<DownloadStore>((set, get) => ({
   queue: [],
   isDownloading: false,
   _isProcessing: false,
   _controllers: new Map(),
+  _fileHandles: new Map(),
+  _dirHandle: null,
 
-  enqueue(payload) {
+  // Returns false if the user cancelled the picker — nothing is queued.
+  async enqueue(payload) {
     const existing = get().queue.find((i) => i.id === payload.id);
-    if (existing && existing.status !== 'done' && existing.status !== 'error' && existing.status !== 'paused') return;
+    if (existing && existing.status !== 'done' && existing.status !== 'error') return false;
 
-    const item: DownloadItem = {
-      ...payload,
-      status: 'queued',
-      progress: 0,
-      receivedBytes: 0,
-    };
+    const w = window as FSWindow;
+    if (!w.showSaveFilePicker) {
+      throw new Error('File System Access API is not available in this browser');
+    }
+
+    // Picker FIRST, while the click gesture is still live.
+    let handle: FileHandle;
+    try {
+      handle = await w.showSaveFilePicker({
+        suggestedName: payload.filename,
+        types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }],
+      });
+    } catch (err) {
+      if (isAbort(err)) return false; // cancelled — no queue entry, no spinner
+      throw err;
+    }
+
+    get()._fileHandles.set(payload.id, handle);
+
+    const item: DownloadItem = { ...payload, status: 'queued', progress: 0, receivedBytes: 0 };
     set((s) => ({ queue: [...s.queue.filter((i) => i.id !== payload.id), item] }));
 
-    if (!get().isDownloading) {
-      get()._processNext();
-    }
+    if (!get().isDownloading) get()._processNext();
+    return true;
   },
 
-  enqueueAll(items) {
+  // One directory prompt for the whole batch.
+  async enqueueAll(items) {
     const current = get().queue;
     const toAdd: DownloadItem[] = items
       .filter((p) => {
@@ -97,76 +112,48 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
       })
       .map((p) => ({ ...p, status: 'queued' as const, progress: 0, receivedBytes: 0 }));
 
-    if (toAdd.length === 0) return;
+    if (toAdd.length === 0) return false;
 
-    set((s) => {
-      const filtered = s.queue.filter((i) => !toAdd.some((t) => t.id === i.id));
-      return { queue: [...filtered, ...toAdd] };
-    });
-
-    if (!get().isDownloading) {
-      get()._processNext();
-    }
-  },
-
-  pause(id) {
-    const { _controllers } = get();
-
-    const ctrl = _controllers.get(id);
-    if (ctrl) {
-      ctrl.abort();
-      _controllers.delete(id);
+    const w = window as FSWindow;
+    if (!w.showDirectoryPicker) {
+      throw new Error('Directory picker is not available in this browser');
     }
 
+    let dir: DirHandle;
+    try {
+      dir = await w.showDirectoryPicker({ mode: 'readwrite' });
+    } catch (err) {
+      if (isAbort(err)) return false; // cancelled — nothing queued at all
+      throw err;
+    }
+
+    set({ _dirHandle: dir });
     set((s) => ({
-      isDownloading: false,
-      queue: s.queue.map((i) =>
-        i.id === id && (i.status === 'downloading' || i.status === 'queued')
-          ? { ...i, status: 'paused' }
-          : i,
-      ),
+      queue: [...s.queue.filter((i) => !toAdd.some((t) => t.id === i.id)), ...toAdd],
     }));
 
-    if (!get()._isProcessing) {
-      setTimeout(() => get()._processNext(), 100);
-    }
-  },
-
-  resume(id) {
-    set((s) => ({
-      queue: s.queue.map((i) =>
-        i.id === id && i.status === 'paused'
-          ? { ...i, status: 'queued', progress: 0, receivedBytes: 0 }
-          : i,
-      ),
-    }));
-
-    if (!get().isDownloading) {
-      get()._processNext();
-    }
+    if (!get().isDownloading) get()._processNext();
+    return true;
   },
 
   removeItem(id) {
-    const ctrl = get()._controllers.get(id);
-    if (ctrl) ctrl.abort();
+    get()._controllers.get(id)?.abort();
+    get()._controllers.delete(id);
+    get()._fileHandles.delete(id);
     set((s) => ({ queue: s.queue.filter((i) => i.id !== id) }));
   },
 
   clearDone() {
-    set((s) => ({
-      queue: s.queue.filter((i) => i.status !== 'done' && i.status !== 'error'),
-    }));
+    set((s) => ({ queue: s.queue.filter((i) => i.status !== 'done' && i.status !== 'error') }));
   },
 
   async _processNext() {
     if (get()._isProcessing) return;
-
     set({ _isProcessing: true });
 
-    const { queue } = get();
-    const nextItem = queue.find((i) => i.status === 'queued');
+    const nextItem = get().queue.find((i) => i.status === 'queued');
     if (!nextItem) {
-      set({ isDownloading: false, _isProcessing: false });
+      set({ isDownloading: false, _isProcessing: false, _dirHandle: null });
       return;
     }
 
@@ -176,43 +163,34 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
     set((s) => ({
       isDownloading: true,
       queue: s.queue.map((i) =>
-        i.id === nextItem.id
-          ? { ...i, status: 'downloading', progress: 0, receivedBytes: 0 }
-          : i,
+        i.id === nextItem.id ? { ...i, status: 'downloading', progress: 0, receivedBytes: 0 } : i,
       ),
     }));
 
-    const url = buildDownloadUrl(
-      nextItem.nvrId,
-      nextItem.channel,
-      nextItem.startTime,
-      nextItem.endTime,
-    );
+    let writable: FileWritable | null = null;
 
     try {
+      // Destination is resolved BEFORE the network call — no prompt here.
+      let handle = get()._fileHandles.get(nextItem.id);
+      if (!handle) {
+        const dir = get()._dirHandle;
+        if (!dir) throw new Error('No save destination selected');
+        handle = await dir.getFileHandle(nextItem.filename, { create: true });
+      }
+      writable = await handle.createWritable();
+
       const { token } = useSessionStore.getState();
-      const response = await fetch(url, {
+      const response = await fetch(buildDownloadUrl(
+        nextItem.nvrId, nextItem.channel, nextItem.startTime, nextItem.endTime,
+      ), {
         signal: controller.signal,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Server responded with ${response.status}`);
 
-      const contentLength = response.headers.get('content-length');
-      const totalBytes = contentLength ? Number.parseInt(contentLength, 10) : null;
-
-      const filePickerWindow = window as FileSystemAccessWindow;
-      if (!filePickerWindow.showSaveFilePicker) {
-        throw new Error('File System Access API is not available in this browser');
-      }
-
-      const fileHandle = await filePickerWindow.showSaveFilePicker({
-        suggestedName: nextItem.filename,
-        types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }],
-      });
-      const writable = await fileHandle.createWritable();
+      const cl = response.headers.get('content-length');
+      const totalBytes = cl ? Number.parseInt(cl, 10) : null;
 
       const reader = response.body!.getReader();
       let receivedBytes = 0;
@@ -222,57 +200,45 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
         if (done) break;
         await writable.write(value);
         receivedBytes += value.byteLength;
-
-        const pct = totalBytes
-          ? Math.min(99, Math.round((receivedBytes / totalBytes) * 100))
-          : 0;
-
+        const pct = totalBytes ? Math.min(99, Math.round((receivedBytes / totalBytes) * 100)) : 0;
         set((s) => ({
           queue: s.queue.map((i) =>
-            i.id === nextItem.id
-              ? { ...i, progress: pct, receivedBytes }
-              : i,
+            i.id === nextItem.id ? { ...i, progress: pct, receivedBytes } : i,
           ),
         }));
       }
 
       await writable.close();
-      get()._controllers.delete(nextItem.id);
+      writable = null;
 
       set((s) => ({
         queue: s.queue.map((i) =>
-          i.id === nextItem.id
-            ? { ...i, status: 'done', progress: 100 }
-            : i,
+          i.id === nextItem.id ? { ...i, status: 'done', progress: 100 } : i,
         ),
       }));
     } catch (err) {
-      get()._controllers.delete(nextItem.id);
+      controller.abort();                 // C: always release the RTSP connection
+      await writable?.abort?.().catch(() => {});
 
-      if (err instanceof Error && err.name === 'AbortError') {
-        set({ _isProcessing: false });
-        get()._processNext();
-        return;
+      if (isAbort(err)) {
+        // A: actually clear the row instead of leaving it spinning
+        set((s) => ({ queue: s.queue.filter((i) => i.id !== nextItem.id) }));
+      } else {
+        const message = err instanceof Error ? err.message : 'Download failed';
+        set((s) => ({
+          queue: s.queue.map((i) =>
+            i.id === nextItem.id ? { ...i, status: 'error', error: message } : i,
+          ),
+        }));
       }
-
-      const message = err instanceof Error ? err.message : 'Download failed';
-      set((s) => ({
-        queue: s.queue.map((i) =>
-          i.id === nextItem.id
-            ? { ...i, status: 'error', error: message }
-            : i,
-        ),
-      }));
+    } finally {
+      get()._controllers.delete(nextItem.id);
+      get()._fileHandles.delete(nextItem.id);
     }
 
     const hasQueued = get().queue.some((i) => i.status === 'queued');
-    set({
-      isDownloading: false,
-      _isProcessing: false,
-    });
-
-    if (hasQueued) {
-      get()._processNext();
-    }
+    set({ isDownloading: false, _isProcessing: false });
+    if (hasQueued) get()._processNext();
+    else set({ _dirHandle: null });
   },
 }));

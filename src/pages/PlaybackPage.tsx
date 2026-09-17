@@ -74,7 +74,7 @@ function buildStreamUrl(
   channel: number,
   startTime: string,  // ISO — where to start streaming from
   endTime: string,    // ISO — end of the recording window
-  nvrType: NVRType,
+  _nvrType: NVRType,
   download = false,   // if true, backend sends Content-Disposition: attachment
 ): string {
   const params = new URLSearchParams({

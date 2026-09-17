@@ -117,14 +117,6 @@ function StatusBadge({ item }: { item: DownloadItem | undefined }) {
       </span>
     );
   }
-  if (item.status === 'paused') {
-    return (
-      <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#8d90a0]">
-        <Pause className="w-3 h-3" />
-        {item.receivedBytes > 0 ? formatBytes(item.receivedBytes) : 'Paused'}
-      </span>
-    );
-  }
   return (
     <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#2563eb]">
       <Loader2 className="w-3 h-3 animate-spin" />
@@ -156,7 +148,7 @@ export default function DownloadPage() {
   const calendarRef = useRef<HTMLDivElement>(null);
 
   // Download store
-  const { queue, isDownloading, enqueue, enqueueAll, pause, resume } = useDownloadStore();
+  const { queue, isDownloading, enqueue, enqueueAll, removeItem } = useDownloadStore();
 
   console.log('DownloadPage Render:', { nvrId, channel, selectedDate, enabled: !!nvrId && channel !== null && !!selectedDate });
 
@@ -251,20 +243,30 @@ export default function DownloadPage() {
     [],
   );
 
-  function handleDownloadOne(rec: RecordingWithMeta) {
-    enqueue(buildPayload(rec));
+  async function handleDownloadOne(rec: RecordingWithMeta) {
+  try {
+    const started = await enqueue(buildPayload(rec));
+    if (!started) return;              // cancelled — button reverts, no spinner
     toast.success('Added to download queue', {
       description: `CH${rec.channel} — ${toHHMMSS(rec.startTime)}`,
     });
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Could not start download');
   }
+}
 
-  function handleDownloadAll() {
-    if (filteredRecordings.length === 0) return;
-    enqueueAll(filteredRecordings.map(buildPayload));
+  async function handleDownloadAll() {
+  if (filteredRecordings.length === 0) return;
+  try {
+    const started = await enqueueAll(filteredRecordings.map(buildPayload));
+    if (!started) return;              // cancelled — nothing queued at all
     toast.success(`${filteredRecordings.length} recordings queued`, {
       description: 'Downloads will process one at a time.',
     });
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : 'Could not start downloads');
   }
+}
 
   // Map queue items by id for quick lookup
   const queueMap = useMemo(
@@ -569,42 +571,17 @@ export default function DownloadPage() {
                               </button>
                             )}
 
-                            {queueItem?.status === 'downloading' && (
+                            {(queueItem?.status === 'downloading' ||
+                              queueItem?.status === 'queued') && (
                               <button
                                 type="button"
-                                onClick={() => pause(itemId)}
-                                className="inline-flex items-center gap-1.5 bg-[#1a1a1a] hover:bg-[#f59e0b]/10
-                                           border border-[#2a2a2a] hover:border-[#f59e0b]/50
-                                           text-[#8d90a0] hover:text-[#f59e0b] rounded-sm px-2.5 py-1
+                                onClick={() => removeItem(itemId)}
+                                className="inline-flex items-center gap-1.5 bg-[#1a1a1a] hover:bg-red-500/10
+                                           border border-[#2a2a2a] hover:border-red-500/50
+                                           text-[#8d90a0] hover:text-red-400 rounded-sm px-2.5 py-1
                                            text-[9px] font-bold uppercase tracking-widest transition-all"
                               >
-                                <Pause className="w-3 h-3" /> Pause
-                              </button>
-                            )}
-
-                            {queueItem?.status === 'queued' && (
-                              <button
-                                type="button"
-                                onClick={() => pause(itemId)}
-                                className="inline-flex items-center gap-1.5 bg-[#1a1a1a] hover:bg-[#f59e0b]/10
-                                           border border-[#2a2a2a] hover:border-[#f59e0b]/50
-                                           text-[#8d90a0] hover:text-[#f59e0b] rounded-sm px-2.5 py-1
-                                           text-[9px] font-bold uppercase tracking-widest transition-all"
-                              >
-                                <Pause className="w-3 h-3" /> Dequeue
-                              </button>
-                            )}
-
-                            {queueItem?.status === 'paused' && (
-                              <button
-                                type="button"
-                                onClick={() => resume(itemId)}
-                                className="inline-flex items-center gap-1.5 bg-[#1a1a1a] hover:bg-[#2563eb]/10
-                                           border border-[#2a2a2a] hover:border-[#2563eb]/50
-                                           text-[#8d90a0] hover:text-[#2563eb] rounded-sm px-2.5 py-1
-                                           text-[9px] font-bold uppercase tracking-widest transition-all"
-                              >
-                                <Play className="w-3 h-3" /> Resume
+                                <XCircle className="w-3 h-3 text-red-400" /> Cancel Download
                               </button>
                             )}
 

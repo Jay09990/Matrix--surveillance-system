@@ -1,31 +1,44 @@
 import path from "path"
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-  },
-  optimizeDeps: {
-    include: ['react-player'],
-  },
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://192.168.1.26:3000',
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+
+  let target = 'http://localhost:3000';
+  if (env.VITE_API_BASE_URL) {
+    try {
+      const url = new URL(env.VITE_API_BASE_URL);
+      target = `${url.protocol}//${url.host}`;
+    } catch {
+      // fallback if invalid URL
+    }
+  }
+
+  return {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
       },
-      '/recordings': {
-        target: 'http://192.168.1.26:3000',
-        changeOrigin: true,
+    },
+    optimizeDeps: {
+      include: ['react-player'],
+    },
+    server: {
+      proxy: {
+        '/api': {
+          target,
+          changeOrigin: true,
+        },
+        '/recordings': {
+          target,
+          changeOrigin: true,
+        },
       },
     },
-  },
   build: {
     rollupOptions: {
       output: {
@@ -98,4 +111,6 @@ export default defineConfig({
     // Warn when any single chunk exceeds 500kB
     chunkSizeWarningLimit: 500,
   },
-})
+  };
+});
+

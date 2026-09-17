@@ -50,7 +50,7 @@ function CreateUserForm({ assignableRoles }: { assignableRoles: Role[] }) {
     defaultValues: {
       email: '',
       password: '',
-      role: assignableRoles[0] ?? 'VIEWER',
+      role: undefined,
     },
   });
 
@@ -66,7 +66,11 @@ function CreateUserForm({ assignableRoles }: { assignableRoles: Role[] }) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      {/* "new-password" isn't a real token for a <form>'s own autocomplete
+          attribute (it only means something on individual <input>s) — it
+          was silently ignored, so the form-level attribute now uses the
+          one value browsers actually respect here. */}
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8" autoComplete="off">
 
         {/* ── Account Details ────────────────────────────────── */}
         <div className="space-y-4">
@@ -84,6 +88,11 @@ function CreateUserForm({ assignableRoles }: { assignableRoles: Role[] }) {
                   <FormControl>
                     <Input
                       type="email"
+                      // "none" is not a valid HTML5 autocomplete token (only
+                      // "off" is) — browsers were ignoring it and autofilling
+                      // a saved email/username here since this looks like a
+                      // login form (email input + password input together).
+                      autoComplete="off"
                       placeholder="user@example.com"
                       {...field}
                       className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]"
@@ -102,7 +111,7 @@ function CreateUserForm({ assignableRoles }: { assignableRoles: Role[] }) {
                   <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger className="bg-[#0d0d0d] border-[#2a2a2a] text-[#e5e2e1]">
-                        <SelectValue />
+                        <SelectValue placeholder="Select a role" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent className="bg-[#131313] border-[#2a2a2a] text-[#e5e2e1]">
@@ -135,6 +144,7 @@ function CreateUserForm({ assignableRoles }: { assignableRoles: Role[] }) {
                 <FormControl>
                   <Input
                     type="password"
+                    autoComplete="new-password"
                     placeholder="Min 8 chars, upper, lower, number"
                     {...field}
                     className="bg-[#0d0d0d] border-[#2a2a2a] focus-visible:ring-[#2563eb]"

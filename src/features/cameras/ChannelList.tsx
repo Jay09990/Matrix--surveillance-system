@@ -1,5 +1,5 @@
 import { useChannels } from './useChannels';
-import { Loader2, AlertCircle, Video, GripVertical, WifiOff } from 'lucide-react';
+import { Loader2, AlertCircle, Video, GripVertical } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import type { Camera } from '../../types/camera';
 import { useDraggable } from '@dnd-kit/core';
@@ -15,7 +15,7 @@ export const ChannelList = ({ nvrId }: ChannelListProps) => {
   if (!nvrId) {
     return (
       <div className="flex-1 flex items-center justify-center p-4 text-[#8d90a0]">
-        <p className="text-xs uppercase tracking-widest font-bold text-center">Select an NVR<br/>to view channels</p>
+        <p className="text-xs uppercase tracking-widest font-bold text-center">Select an NVR<br />to view channels</p>
       </div>
     );
   }
@@ -40,7 +40,12 @@ export const ChannelList = ({ nvrId }: ChannelListProps) => {
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-[1px] bg-[#1e1e1e]">
       {channels?.map((cam, index) => (
-        <DraggableChannelRow key={cam?.id || `empty-${index}`} channel={cam} index={index + 1} />
+        <DraggableChannelRow
+          key={cam?.id || `empty-${index}`}
+          channel={cam}
+          ordinal={index}                             // list position — used for stable drag ids only
+          displayNumber={cam?.channel ?? index + 1}   // vendor channel no. — display only
+        />
       ))}
     </div>
   );
@@ -48,10 +53,11 @@ export const ChannelList = ({ nvrId }: ChannelListProps) => {
 
 interface DraggableChannelRowProps {
   channel: Camera | null;
-  index: number;
+  ordinal: number;
+  displayNumber: number;
 }
 
-const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
+const DraggableChannelRow = ({ channel, ordinal, displayNumber }: DraggableChannelRowProps) => {
   const { activeChannels } = useGridStore();
   const isInUse = channel?.id ? activeChannels.some(c => c?.id === channel.id) : false;
 
@@ -59,20 +65,45 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
   const isOffline = !isEmpty && !channel.isOnline;
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: channel?.id ? `channel-${channel.id}` : `empty-${index}`,
+    id: channel?.id ? `channel-${channel.id}` : `empty-${ordinal}`,
     data: channel ?? {},
     disabled: isEmpty || isOffline || isInUse,
   });
+
+  const handleRowClick = () => {
+    if (isEmpty || isOffline || isInUse || !channel) return;
+    const store = useGridStore.getState();
+
+    // Grid placement is independent of camera.channel — that value is a
+    // vendor-assigned node id (HiFocus parses it out of a GUID) and is not
+    // guaranteed to be a contiguous 1..N index.
+    let targetCellIndex = store.activeChannels.findIndex(c => c === null);
+
+    if (targetCellIndex === -1) {
+      // Every slot in the current layout is occupied — grow to the next size up.
+      const nextIndex = store.activeChannels.length;
+
+      if (nextIndex < 4) store.setLayout('2x2');
+      else if (nextIndex < 9) store.setLayout('3x3');
+      else if (nextIndex < 16) store.setLayout('4x4');
+      else return; // 4x4 is the largest layout — grid is full, nothing to do.
+
+      targetCellIndex = nextIndex;
+    }
+
+    store.addChannel(channel, targetCellIndex);
+  };
 
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onClick={handleRowClick}
       className={`flex items-center justify-between px-3 py-2 bg-[#131313] transition-colors
         ${isEmpty || isInUse ? 'opacity-50' : ''}
         ${isDragging ? 'opacity-30 border border-[#2563eb] z-10 relative' : ''}
-        ${!isEmpty && !isOffline && !isInUse ? 'hover:bg-[#1e1e1e] cursor-grab active:cursor-grabbing' : ''}
+        ${!isEmpty && !isOffline && !isInUse ? 'hover:bg-[#1e1e1e] cursor-pointer' : ''}
         ${isOffline || isInUse ? 'cursor-not-allowed' : ''}
         ${isOffline ? 'opacity-60' : ''}
       `}
@@ -84,7 +115,7 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
           <div className="w-5.5" />
         )}
         <span className="font-mono text-[10px] text-[#8d90a0] w-6 mr-1">
-          {index.toString().padStart(2, '0')}
+          {displayNumber.toString().padStart(2, '0')}
         </span>
 
         {isEmpty ? (
@@ -93,9 +124,8 @@ const DraggableChannelRow = ({ channel, index }: DraggableChannelRowProps) => {
           <div className="flex flex-col ml-1">
             <span className="text-sm text-[#e5e2e1] truncate max-w-[120px]">{channel.name}</span>
             <div className="flex items-center mt-0.5">
-              <span className={`w-1.5 h-1.5 rounded-sm mr-1.5 ${
-                channel.isOnline ? 'bg-[#16a34a]' : 'bg-[#e03e3e]'
-              }`} />
+              <span className={`w-1.5 h-1.5 rounded-sm mr-1.5 ${channel.isOnline ? 'bg-[#16a34a]' : 'bg-[#e03e3e]'
+                }`} />
               <span className="text-[9px] font-mono text-[#8d90a0] uppercase">
                 {channel.isOnline ? 'online' : 'offline'}
               </span>
