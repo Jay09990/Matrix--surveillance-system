@@ -23,8 +23,9 @@ export const Topbar = () => {
     try {
       // Try to stop any active scanning before logging out
       const res = await apiService.nvrs.detection.active();
-      if (res.data?.nvrId) {
-        await apiService.nvrs.detection.stop(res.data.nvrId);
+      const activeId = (res.data as any)?.nvrId ?? res.data?.activeNvrIds?.[0];
+      if (activeId) {
+        await apiService.nvrs.detection.stop(activeId);
       }
     } catch (e) {
       // Ignore errors during logout cleanup

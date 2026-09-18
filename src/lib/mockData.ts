@@ -6,8 +6,10 @@ export const MOCK_USER: User = {
   id: 'u1',
   email: 'admin@matrix.vms',
   name: 'Admin User',
-  role: 'admin',
+  role: 'ADMIN',
 };
+
+
 
 // Flat NVR list matching the new API response shape
 export const MOCK_NVRS_FLAT: NVR[] = [
@@ -67,12 +69,12 @@ export const MOCK_NVRS_FLAT: NVR[] = [
 
 export const MOCK_CAMERAS: Record<string, Camera[]> = {
   n1: [
-    { id: 'c1', nvrId: 'n1', channel: 1, name: 'Main Entrance', status: 'online', areaTag: 'entrance' },
-    { id: 'c2', nvrId: 'n1', channel: 2, name: 'Lobby North', status: 'online', areaTag: 'lobby' },
-    { id: 'c3', nvrId: 'n1', channel: 5, name: 'Server Room', status: 'warning', areaTag: 'server-room' },
-    { id: 'c4', nvrId: 'n1', channel: 8, name: 'Loading Dock', status: 'offline', lastSeenAt: new Date(Date.now() - 3600000).toISOString(), areaTag: 'dock' },
+    { id: 'c1', nvrId: 'n1', channel: 1, name: 'Main Entrance', isOnline: true, isActive: true, areaTag: 'entrance' },
+    { id: 'c2', nvrId: 'n1', channel: 2, name: 'Lobby North', isOnline: true, isActive: true, areaTag: 'lobby' },
+    { id: 'c3', nvrId: 'n1', channel: 5, name: 'Server Room', isOnline: false, isActive: false, areaTag: 'server-room' },
+    { id: 'c4', nvrId: 'n1', channel: 8, name: 'Loading Dock', isOnline: false, isActive: false, lastSeenAt: new Date(Date.now() - 3600000).toISOString(), areaTag: 'dock' },
   ],
   n2: [
-    { id: 'c5', nvrId: 'n2', channel: 1, name: 'Perimeter West', status: 'online', areaTag: 'perimeter' },
+    { id: 'c5', nvrId: 'n2', channel: 1, name: 'Perimeter West', isOnline: true, isActive: true, areaTag: 'perimeter' },
   ],
 };

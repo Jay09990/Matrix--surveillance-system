@@ -1,0 +1,29 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      NODE_ENV: development
+      VITE_API_BASE_URL: http://localhost:3000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./src:/usr/src/app/src
+      - ./public:/usr/src/app/public
+      - ./index.html:/usr/src/app/index.html
+      - ./tsconfig.app.json:/usr/src/app/tsconfig.app.json
+    develop:
+      watch:
+        - action: sync
+          path: ./src
+          target: /usr/src/app/src
+        - action: sync
+          path: ./public
+          target: /usr/src/app/public
+        - action: sync
+          path: ./index.html
+          target: /usr/src/app/index.html
+        - action: rebuild
+          path: ./package.json

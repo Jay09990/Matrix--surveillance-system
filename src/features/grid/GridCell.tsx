@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 
 import type { Camera } from '../../types/camera';
@@ -37,10 +37,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
               addChannel({ ...channel, streamUrl: res.data[0].whepUrl }, index);
             } else {
               // If we can't resolve, mark as no-signal to stop infinite retries
-              // but only if it's not currently offline
-              if (channel.status !== 'offline') {
-                addChannel({ ...channel, status: 'no-signal' }, index);
-              }
+              addChannel({ ...channel, status: 'no-signal' }, index);
             }
           }
         } catch (e) {
@@ -86,7 +83,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
     } else if (channel) {
       console.log(`[GridCell] Cell ${index} waiting for streamUrl (status: ${channel.status})`);
     }
-  }, [channel?.streamUrl, channel?.status, index]);
+  }, [channel?.streamUrl, index]);
 
   if (!channel) {
     return (
@@ -106,7 +103,7 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
     );
   }
 
-  const isOffline = channel.status === 'offline';
+  const isOffline = !channel.isOnline;
   const isNoSignal = channel.status === 'no-signal';
 
   return (
@@ -135,9 +132,9 @@ export const GridCell = ({ index, channel }: GridCellProps) => {
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-sm ${
             // If we have a stream URL, we consider it "online" for the indicator
-            channel.streamUrl ? 'bg-[#16a34a]' :
-            isOffline || isNoSignal ? 'bg-[#e03e3e]' :
+            isOffline ? 'bg-[#e03e3e]' :
             channel.status === 'warning' ? 'bg-[#f59e0b]' :
+            channel.streamUrl ? 'bg-[#16a34a]' :
             'bg-[#16a34a]'
           } shadow-[0_0_8px_currentColor]`} />
           

@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 
 import { toast } from 'sonner'
-import { Pencil, Trash2, Loader2, Search, AlertCircle, Activity } from 'lucide-react';
+import { Pencil, Trash2, Loader2, Search, AlertCircle } from 'lucide-react';
 
 
 

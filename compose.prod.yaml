@@ -1,0 +1,14 @@
+# Production Compose file — uses pre-built dist with `npm run preview`
+# Build first with: npm run build
+# Run with: docker compose -f compose.yaml -f compose.prod.yaml up
+services:
+  server:
+    build:
+      target: prod
+    environment:
+      NODE_ENV: production
+    ports:
+      - "5173:4173"
+    restart: always
+    volumes: []
+    develop: null

@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 
 import { apiService } from '../../services/api';
 
-export const useDetection = (nvrId: string | null) => {
+export const useDetection = (_nvrId: string | null) => {
   const startMutation = useMutation({
     mutationFn: (id: string) => apiService.nvrs.detection.start(id),
   });

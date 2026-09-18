@@ -15,8 +15,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Pause,
-  Play,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Topbar } from '../components/Topbar';
@@ -56,9 +54,7 @@ function toHHMMSS(isoStr: string): string {
   }
 }
 
-function parseTimeToMs(date: string, hhmm: string): number {
-  return new Date(`${date}T${hhmm}Z`).getTime();
-}
+
 
 function buildItemId(nvrId: string, channel: number, startTime: string) {
   return `${nvrId}-${channel}-${startTime}`;
@@ -267,6 +263,10 @@ export default function DownloadPage() {
     toast.error(err instanceof Error ? err.message : 'Could not start downloads');
   }
 }
+
+
+
+
 
   // Map queue items by id for quick lookup
   const queueMap = useMemo(

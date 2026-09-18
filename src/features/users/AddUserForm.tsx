@@ -185,7 +185,7 @@ function EditUserForm({ userId, assignableRoles }: { userId: string; assignableR
     resolver: zodResolver(updateUserSchema),
     defaultValues: {
       email: '',
-      role: assignableRoles[0] ?? 'VIEWER',
+      role: (assignableRoles[0] ?? 'VIEWER') as 'ADMIN' | 'VIEWER',
     },
   });
 

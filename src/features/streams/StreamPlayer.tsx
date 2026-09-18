@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { type Camera } from "../../types/camera";
 import { useGridStore } from "../../store/useGridStore";
@@ -22,35 +22,7 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
 
   const lastUrlRef = useRef<string>(streamUrl)
 
-  useEffect(() => {
-    console.log(`[StreamPlayer] Mount/Update for ${streamUrl}`)
-    isMountedRef.current = true
-    
-    // Only start if we don't have a connection or the URL changed
-    if (!pcRef.current || lastUrlRef.current !== streamUrl) {
-      console.log(`[StreamPlayer] Starting WebRTC (URL changed: ${lastUrlRef.current !== streamUrl})`)
-      lastUrlRef.current = streamUrl
-      retryCountRef.current = 0
-      startWebRTC()
-    }
-
-    return () => {
-      // We only want to cleanup if we are actually unmounting, 
-      // not just because a prop (other than streamUrl) changed.
-      // But since this effect depends on [streamUrl], it will run on mount and URL change.
-    }
-  }, [streamUrl])
-
-  // Separate unmount effect
-  useEffect(() => {
-    return () => {
-      console.log(`[StreamPlayer] Unmounting for ${streamUrl}`)
-      isMountedRef.current = false
-      cleanup()
-    }
-  }, [])
-
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     console.log(`[StreamPlayer] Cleanup called for ${streamUrl}`)
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current)
@@ -68,15 +40,44 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
     }
     const video = videoRef.current
     if (video) video.srcObject = null
-  }
+  }, [streamUrl])
 
-  const handlePermanentFailure = () => {
+  const handlePermanentFailure = useCallback(() => {
     if (!isMountedRef.current) return
     console.warn(`[StreamPlayer] Stream permanently failed after ${MAX_RETRIES} retries`)
-    addChannel({ ...channel, status: 'no-signal', streamUrl: undefined }, cellIndex)
-  }
+    addChannel({ ...channel, isOnline: false, streamUrl: undefined }, cellIndex)
+  }, [channel, cellIndex, addChannel])
 
-  const scheduleRetry = () => {
+  const buildWhepUrl = useCallback((url: string): string => {
+    try {
+      const normalized = url.replace(/^rtsp:\/\//i, 'http://')
+      const urlObj = new URL(normalized)
+
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+      try {
+        const apiHost = new URL(apiBaseUrl).hostname
+        if (urlObj.hostname !== apiHost) urlObj.hostname = apiHost
+      } catch {
+        console.warn('[WHEP] Invalid VITE_API_BASE_URL, using default hostname')
+      }
+
+      urlObj.username = ''
+      urlObj.password = ''
+
+      if (urlObj.port === '554') urlObj.port = '8889'
+
+      const base = urlObj.toString().replace(/\/?$/, '')
+      return base.endsWith('/whep') ? base : `${base}/whep`
+    } catch {
+      return url.endsWith('/whep') ? url : `${url}/whep`
+    }
+  }, [])
+
+  // startWebRTC needs to be defined before scheduleRetry for useCallback closure
+  // but they are mutually recursive. Use a ref to break the cycle.
+  const startWebRTCRef = useRef<() => Promise<void>>(null)
+
+  const scheduleRetry = useCallback(() => {
     if (!isMountedRef.current) return
     if (retryTimerRef.current) {
       console.log(`[StreamPlayer] Retry already scheduled, skipping`)
@@ -94,37 +95,14 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
 
     retryTimerRef.current = setTimeout(() => {
       retryTimerRef.current = null
-      if (isMountedRef.current) {
+      if (isMountedRef.current && startWebRTCRef.current) {
         console.log(`[StreamPlayer] Executing retry for ${streamUrl}`)
-        startWebRTC()
+        startWebRTCRef.current()
       }
     }, delay)
-  }
+  }, [streamUrl, handlePermanentFailure])
 
-  const buildWhepUrl = (url: string): string => {
-    try {
-      const normalized = url.replace(/^rtsp:\/\//i, 'http://')
-      const urlObj = new URL(normalized)
-
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
-      try {
-        const apiHost = new URL(apiBaseUrl).hostname
-        if (urlObj.hostname !== apiHost) urlObj.hostname = apiHost
-      } catch { }
-
-      urlObj.username = ''
-      urlObj.password = ''
-
-      if (urlObj.port === '554') urlObj.port = '8889'
-
-      const base = urlObj.toString().replace(/\/?$/, '')
-      return base.endsWith('/whep') ? base : `${base}/whep`
-    } catch {
-      return url.endsWith('/whep') ? url : `${url}/whep`
-    }
-  }
-
-  const startWebRTC = async () => {
+  const startWebRTC = useCallback(async () => {
     const video = videoRef.current
     if (!video || !isMountedRef.current) return
 
@@ -162,8 +140,6 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           scheduleRetry()
         }
 
-        // Removed aggressive disconnected retry — let it go to failed or recover naturally
-        
         if (state === 'connected' || state === 'completed') {
           console.log(`[ICE] Successfully connected for ${streamUrl}`)
           retryCountRef.current = 0
@@ -172,8 +148,8 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
             retryTimerRef.current = null
           }
           // Update status to online in store if it's not already
-          if (channel.status !== 'online') {
-            addChannel({ ...channel, status: 'online' }, cellIndex)
+          if (!channel.isOnline) {
+            addChannel({ ...channel, isOnline: true }, cellIndex)
           }
         }
       }
@@ -184,10 +160,6 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
           console.warn(`[PC] Connection failed for ${streamUrl}`)
           scheduleRetry()
         }
-      }
-
-      pc.onsignalingstatechange = () => {
-        console.log(`[Signaling] state for ${streamUrl}: ${pc.signalingState}`)
       }
 
       const offer = await pc.createOffer()
@@ -220,7 +192,35 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
       console.error(`[WHEP] Connection error for ${streamUrl}:`, err)
       if (isMountedRef.current) scheduleRetry()
     }
-  }
+  }, [streamUrl, channel, cellIndex, addChannel, cleanup, buildWhepUrl, scheduleRetry])
+
+  // Keep ref updated for scheduleRetry
+  useEffect(() => {
+    startWebRTCRef.current = startWebRTC
+  }, [startWebRTC])
+
+  useEffect(() => {
+    console.log(`[StreamPlayer] Mount/Update for ${streamUrl}`)
+    isMountedRef.current = true
+    
+    // Only start if we don't have a connection or the URL changed
+    if (!pcRef.current || lastUrlRef.current !== streamUrl) {
+      console.log(`[StreamPlayer] Starting WebRTC (URL changed: ${lastUrlRef.current !== streamUrl})`)
+      lastUrlRef.current = streamUrl
+      retryCountRef.current = 0
+      startWebRTC()
+    }
+  }, [streamUrl, startWebRTC])
+
+  // Separate unmount effect
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      console.log(`[StreamPlayer] Unmounting for ${streamUrl}`)
+      isMountedRef.current = false
+      cleanup()
+    }
+  }, [streamUrl, cleanup])
 
   return (
     <video
@@ -228,7 +228,6 @@ export const StreamPlayer = ({ streamUrl, channel, cellIndex }: StreamPlayerProp
       autoPlay
       muted
       playsInline
-      
       className="w-full h-full object-contain bg-black"
       onPlaying={() => console.log(`[Video] playing: ${streamUrl}`)}
       onPause={() => console.log(`[Video] paused: ${streamUrl}`)}

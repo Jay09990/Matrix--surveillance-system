@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiService } from '../../services/api';
-import type { Camera } from '../../types/camera';
 import { USE_MOCKDATA } from '../../config';
 import { MOCK_CAMERAS } from '../../lib/mockData';
 

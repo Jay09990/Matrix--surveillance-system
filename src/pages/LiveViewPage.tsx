@@ -86,14 +86,14 @@ export default function LiveViewPage() {
       }
 
       if (!streamUrl) {
-        addChannel({ ...camera, status: 'no-signal' }, cellIndex)
+        addChannel({ ...camera, isOnline: false }, cellIndex)
         return
       }
 
       addChannel({ ...camera, streamUrl }, cellIndex)
     } catch (error) {
       console.error('Failed to resolve stream:', error)
-      addChannel({ ...camera, status: 'no-signal' }, cellIndex)
+      addChannel({ ...camera, isOnline: false }, cellIndex)
     }
   }
 

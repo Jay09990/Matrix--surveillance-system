@@ -10,6 +10,7 @@ export interface Camera {
   protocol?: string | null;
   areaTag?: string | null;
   streamUrl?: string;      // frontend-only, added after stream resolve
+  status?: 'online' | 'offline' | 'no-signal' | 'warning'; // frontend transient state
 }
 
 export interface CameraStreamResponse {
